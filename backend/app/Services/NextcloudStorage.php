@@ -26,10 +26,11 @@ final class NextcloudStorage
     }
 
     /** @return list<array{name:string, type:string}> */
-    public function listFiles(string $folder): array
+    public function listFiles(string $folder, string $relativePath = ''): array
     {
-        if (!$this->ensureFolder($folder)) return [];
-        $response = $this->request('PROPFIND', $folder . '/', ['Depth: 1']);
+        $path = $this->childPath($folder, $relativePath);
+        if ($path === null || !$this->ensureFolder($path)) return [];
+        $response = $this->request('PROPFIND', $path . '/', ['Depth: 1']);
         if ($response['status'] < 200 || $response['status'] >= 300 || !is_string($response['body'])) return [];
         $xml = simplexml_load_string($response['body']);
         if ($xml === false) return [];
@@ -64,36 +65,50 @@ final class NextcloudStorage
         return $folders;
     }
 
-    public function upload(string $folder, array $file): bool
+    public function upload(string $folder, array $file, string $relativePath = ''): bool
     {
         $extension = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
-        if (!$this->isConfigured() || !in_array($extension, self::ALLOWED_EXTENSIONS, true) || !isset($file['tmp_name'], $file['name']) || !is_uploaded_file($file['tmp_name']) || !$this->ensureFolder($folder)) return false;
+        $path = $this->childPath($folder, $relativePath);
+        if ($path === null || !$this->isConfigured() || !in_array($extension, self::ALLOWED_EXTENSIONS, true) || !isset($file['tmp_name'], $file['name']) || !is_uploaded_file($file['tmp_name']) || !$this->ensureFolder($path)) return false;
         $handle = fopen($file['tmp_name'], 'rb');
         if ($handle === false) return false;
-        $response = $this->request('PUT', $folder . '/' . basename((string) $file['name']), [], $handle, filesize($file['tmp_name']));
+        $response = $this->request('PUT', $path . '/' . basename((string) $file['name']), [], $handle, filesize($file['tmp_name']));
         fclose($handle);
         return $response['status'] >= 200 && $response['status'] < 300;
     }
 
-    public function delete(string $folder, string $name): bool
+    public function delete(string $folder, string $name, string $relativePath = ''): bool
     {
-        if (!$this->isConfigured()) return false;
-        $response = $this->request('DELETE', $folder . '/' . basename($name));
+        $path = $this->childPath($folder, $relativePath);
+        if ($path === null || !$this->isConfigured() || !$this->validEntryName($name)) return false;
+        $response = $this->request('DELETE', $path . '/' . basename($name));
         return $response['status'] >= 200 && $response['status'] < 300;
     }
 
-    public function createFolder(string $folder, string $name): bool
+    /** @return array{body:string, contentType:string}|null */
+    public function download(string $folder, string $name, string $relativePath = ''): ?array
     {
-        if (!$this->ensureFolder($folder) || !$this->validEntryName($name)) return false;
-        $response = $this->request('MKCOL', $folder . '/' . trim($name));
+        $path = $this->childPath($folder, $relativePath);
+        if ($path === null || !$this->isConfigured() || !$this->validEntryName($name)) return null;
+        $response = $this->request('GET', $path . '/' . trim($name));
+        if ($response['status'] < 200 || $response['status'] >= 300 || !is_string($response['body'])) return null;
+        return ['body' => $response['body'], 'contentType' => 'application/octet-stream'];
+    }
+
+    public function createFolder(string $folder, string $name, string $relativePath = ''): bool
+    {
+        $path = $this->childPath($folder, $relativePath);
+        if ($path === null || !$this->ensureFolder($path) || !$this->validEntryName($name)) return false;
+        $response = $this->request('MKCOL', $path . '/' . trim($name));
         return $response['status'] === 201;
     }
 
-    public function renameFolder(string $folder, string $currentName, string $newName): bool
+    public function renameFolder(string $folder, string $currentName, string $newName, string $relativePath = ''): bool
     {
-        if (!$this->validEntryName($currentName) || !$this->validEntryName($newName)) return false;
-        $destination = rtrim($this->env['NEXTCLOUD_BASE_URL'], '/') . '/remote.php/dav/files/' . rawurlencode($this->env['NEXTCLOUD_USERNAME']) . '/' . rawurlencode($folder) . '/' . rawurlencode(trim($newName));
-        $response = $this->request('MOVE', $folder . '/' . trim($currentName), ['Destination: ' . $destination, 'Overwrite: F']);
+        $path = $this->childPath($folder, $relativePath);
+        if ($path === null || !$this->validEntryName($currentName) || !$this->validEntryName($newName)) return false;
+        $destination = rtrim($this->env['NEXTCLOUD_BASE_URL'], '/') . '/remote.php/dav/files/' . rawurlencode($this->env['NEXTCLOUD_USERNAME']) . '/' . implode('/', array_map('rawurlencode', explode('/', $path))) . '/' . rawurlencode(trim($newName));
+        $response = $this->request('MOVE', $path . '/' . trim($currentName), ['Destination: ' . $destination, 'Overwrite: F']);
         return $response['status'] >= 200 && $response['status'] < 300;
     }
 
@@ -102,6 +117,18 @@ final class NextcloudStorage
         if (!$this->isConfigured() || !function_exists('curl_init')) return false;
         $response = $this->request('MKCOL', $folder);
         return in_array($response['status'], [201, 301, 405], true);
+    }
+
+    public function childPath(string $root, string $relativePath): ?string
+    {
+        $root = trim($root, '/');
+        $relativePath = trim(str_replace('\\', '/', $relativePath), '/');
+        if ($root === '' || $relativePath === '') return $root !== '' ? $root : null;
+        $segments = explode('/', $relativePath);
+        foreach ($segments as $segment) {
+            if ($segment === '' || $segment === '.' || $segment === '..' || $segment !== basename($segment)) return null;
+        }
+        return $root . '/' . implode('/', $segments);
     }
 
     private function validEntryName(string $name): bool

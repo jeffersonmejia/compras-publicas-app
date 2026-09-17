@@ -1,11 +1,13 @@
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Component, inject, OnInit } from '@angular/core';
+import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
 type RoleCode = 'contratacion_publica' | 'bienes_activos_fijos' | 'contador' | 'director' | 'operador';
 type SessionData = { token: string; expiresAt: number; user: { id: number; username: string; name: string; cedula: string; lastName?: string; role: RoleCode; subrole: string | null } };
 type CloudFile = { name: string; type: 'file' | 'folder' };
+type TreeNode = { name: string; type: 'folder'; path: string; expanded: boolean; loaded: boolean; children: TreeNode[] };
 type PreRegistration = { id: number; cedula: string; role_code: string; status: string; first_names: string | null; last_names: string | null; is_active: number; created_by: number; created_at: string };
 
 @Component({
@@ -16,6 +18,7 @@ type PreRegistration = { id: number; cedula: string; role_code: string; status: 
 })
 export class App implements OnInit {
   private readonly http = inject(HttpClient);
+  private readonly sanitizer = inject(DomSanitizer);
   private readonly storageKey = 'compras-publicas-session';
 
   username = '';
@@ -35,6 +38,12 @@ export class App implements OnInit {
   isLoadingFiles = false;
   uploadMessage = '';
   currentFolder = '';
+  rootFolderName = '';
+  currentPath = '';
+  treeNodes: TreeNode[] = [];
+  previewFileName = '';
+  previewUrl: string | null = null;
+  previewSafeUrl: SafeResourceUrl | null = null;
   isCategoryView = false;
   folderModal: 'create' | 'rename' | null = null;
   folderName = '';
@@ -84,7 +93,14 @@ export class App implements OnInit {
   get rootApi(): string { return `http://${window.location.hostname}/compras-publicas-api/api`; }
   get fileAccept(): string { return this.allowedExtensions.map((extension) => `.${extension}`).join(','); }
   get canPreRegister(): boolean { return this.session?.user.role === 'contratacion_publica'; }
-  get selectedFileRoleLabel(): string { const labels: Record<string, string> = { contratacion_publica: 'Contratación Pública', bienes_activos_fijos: 'Bienes y Activos Fijos', contador: 'Contador', director: 'Director', informatica: 'Informática', talento_humano: 'Talento Humano', comunicacion: 'Comunicación', mine: 'Mi carpeta' }; return labels[this.selectedFileRole] ?? 'Filtrar'; }
+  get selectedFileRoleLabel(): string { const labels: Record<string, string> = { contratacion_publica: 'Contratación Pública', bienes_activos_fijos: 'Bienes y Activos Fijos', contador: 'Contador', director: 'Director', informatica: 'Informática', talento_humano: 'Talento Humano', comunicacion: 'Comunicación', mine: 'Mi carpeta' }; return this.selectedFileRole === 'mine' && this.currentFolder ? this.currentFolder : (labels[this.selectedFileRole] ?? 'Filtrar'); }
+  get rootFolderLabel(): string { return this.rootFolderName || this.selectedFileRoleLabel; }
+  get treeEntries(): Array<{ node: TreeNode; depth: number }> {
+    const entries: Array<{ node: TreeNode; depth: number }> = [];
+    const visit = (nodes: TreeNode[], depth: number): void => nodes.forEach(node => { entries.push({ node, depth }); if (node.expanded) visit(node.children, depth + 1); });
+    visit(this.treeNodes, 0);
+    return entries;
+  }
 
   openRecovery(): void { this.loginMessage = ''; this.authMode = 'recovery'; }
   openRegistration(): void { this.loginMessage = ''; this.registrationMessage = ''; this.authMode = 'registration'; }
@@ -116,12 +132,14 @@ export class App implements OnInit {
     this.navigate('/login');
   }
 
-  loadFiles(clearMessage = true): void {
+  loadFiles(clearMessage = true, path = this.currentPath): void {
     if (!this.session) return;
     this.isLoadingFiles = true;
     if (clearMessage) this.uploadMessage = '';
     const role = this.session.user.role === 'contratacion_publica' ? this.selectedFileRole : this.session.user.role;
-    this.http.get<{ files: CloudFile[]; folder: string; category: boolean }>(`${this.rootApi}/documents?role=${role}`, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: ({ files, folder, category }) => { this.files = files; this.currentFolder = folder; this.isCategoryView = category; this.isLoadingFiles = false; }, error: () => { this.files = []; this.currentFolder = ''; this.isCategoryView = false; this.isLoadingFiles = false; this.uploadMessage = 'No se pudo consultar la carpeta de archivos.'; } });
+    this.currentPath = path;
+    const query = `role=${encodeURIComponent(role)}&path=${encodeURIComponent(path)}`;
+    this.http.get<{ files: CloudFile[]; folder: string; path: string; category: boolean }>(`${this.rootApi}/documents?${query}`, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: ({ files, folder, category }) => { this.files = files; this.currentFolder = folder; this.isCategoryView = category; this.isLoadingFiles = false; if (!category && path === this.currentPath) { if (path === '') { this.rootFolderName = folder; this.setTreeRoot(files); } else { const node = this.findTreeNode(path); if (node) this.setTreeChildren(node, files); } } }, error: () => { this.files = []; this.currentFolder = ''; this.isCategoryView = false; this.isLoadingFiles = false; this.uploadMessage = 'No se pudo consultar la carpeta de archivos.'; } });
   }
 
   loadDocumentConfig(): void {
@@ -129,7 +147,20 @@ export class App implements OnInit {
     this.http.get<{ extensions: string[] }>(`${this.rootApi}/documents/config`, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: data => this.allowedExtensions = data.extensions });
   }
 
-  chooseFileFilter(role: string): void { this.selectedFileRole = role; this.loadFiles(); }
+  chooseFileFilter(role: string): void { this.selectedFileRole = role; this.currentPath = ''; this.treeNodes = []; this.loadFiles(); }
+
+  private setTreeRoot(files: CloudFile[]): void { this.treeNodes = files.filter(file => file.type === 'folder').map(file => ({ name: file.name, type: 'folder', path: file.name, expanded: false, loaded: false, children: [] })); }
+  private setTreeChildren(node: TreeNode, files: CloudFile[]): void { node.children = files.filter(file => file.type === 'folder').map(file => ({ name: file.name, type: 'folder', path: `${node.path}/${file.name}`, expanded: false, loaded: false, children: [] })); node.loaded = true; }
+  private findTreeNode(path: string, nodes = this.treeNodes): TreeNode | null { for (const node of nodes) { if (node.path === path) return node; const nested = this.findTreeNode(path, node.children); if (nested) return nested; } return null; }
+  toggleTreeNode(node: TreeNode): void {
+    node.expanded = !node.expanded;
+    if (node.expanded && !node.loaded && this.session) {
+      this.http.get<{ files: CloudFile[] }>(`${this.rootApi}/documents?role=${encodeURIComponent(this.selectedFileRole)}&path=${encodeURIComponent(node.path)}`, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: ({ files }) => this.setTreeChildren(node, files), error: () => { node.loaded = true; } });
+    }
+  }
+  openFolder(path: string): void { if (this.isCategoryView) return; this.loadFiles(true, path); }
+  goToRootFolder(): void { this.openFolder(''); }
+  goToTreeFolder(node: TreeNode): void { this.openFolder(node.path); }
 
   openCreateFolder(): void { this.folderName = ''; this.folderToRename = ''; this.folderModal = 'create'; }
   openRenameFolder(name: string): void { this.folderName = name; this.folderToRename = name; this.folderModal = 'rename'; }
@@ -138,21 +169,32 @@ export class App implements OnInit {
     if (!this.session || !this.folderName.trim()) return;
     const headers = new HttpHeaders({ Authorization: `Bearer ${this.session.token}` });
     const request = this.folderModal === 'create'
-      ? this.http.post(`${this.rootApi}/documents/folders`, { name: this.folderName.trim() }, { headers })
-      : this.http.patch(`${this.rootApi}/documents/folders/${encodeURIComponent(this.folderToRename)}`, { name: this.folderName.trim() }, { headers });
+      ? this.http.post(`${this.rootApi}/documents/folders`, { name: this.folderName.trim(), path: this.currentPath }, { headers })
+      : this.http.patch(`${this.rootApi}/documents/folders/${encodeURIComponent(this.folderToRename)}`, { name: this.folderName.trim(), path: this.currentPath }, { headers });
     request.subscribe({ next: () => { this.uploadMessage = this.folderModal === 'create' ? 'Carpeta creada correctamente.' : 'Carpeta renombrada correctamente.'; this.closeFolderModal(); this.loadFiles(false); }, error: error => this.uploadMessage = error.error?.message ?? 'No se pudo guardar la carpeta.' });
   }
   requestDelete(file: CloudFile): void { this.deleteTarget = file; }
   cancelDelete(): void { this.deleteTarget = null; }
   confirmDelete(): void {
     if (!this.session || !this.deleteTarget) return;
-    const target = this.deleteTarget; const url = target.type === 'folder' ? `${this.rootApi}/documents/folders/${encodeURIComponent(target.name)}` : `${this.rootApi}/documents/${encodeURIComponent(target.name)}`;
+    const target = this.deleteTarget; const query = this.currentPath ? `?path=${encodeURIComponent(this.currentPath)}` : ''; const url = target.type === 'folder' ? `${this.rootApi}/documents/folders/${encodeURIComponent(target.name)}${query}` : `${this.rootApi}/documents/${encodeURIComponent(target.name)}${query}`;
     this.http.delete(url, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: () => { this.deleteTarget = null; this.uploadMessage = target.type === 'folder' ? 'Carpeta eliminada correctamente.' : 'Archivo eliminado correctamente.'; this.loadFiles(false); }, error: error => { this.deleteTarget = null; this.uploadMessage = error.error?.message ?? 'No se pudo eliminar el elemento.'; } });
   }
+  downloadFile(name: string): void {
+    if (!this.session) return;
+    const query = this.currentPath ? `?path=${encodeURIComponent(this.currentPath)}` : ''; this.http.get(`${this.rootApi}/documents/${encodeURIComponent(name)}${query}`, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }), responseType: 'blob' }).subscribe({ next: blob => { const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = name; link.click(); URL.revokeObjectURL(url); }, error: error => this.uploadMessage = error.error?.message ?? 'No se pudo descargar el archivo.' });
+  }
+  previewPdf(name: string): void {
+    if (!this.session || !name.toLowerCase().endsWith('.pdf')) return;
+    if (this.previewUrl) URL.revokeObjectURL(this.previewUrl);
+    const query = `?inline=1${this.currentPath ? `&path=${encodeURIComponent(this.currentPath)}` : ''}`;
+    this.http.get(`${this.rootApi}/documents/${encodeURIComponent(name)}${query}`, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }), responseType: 'blob' }).subscribe({ next: blob => { this.previewFileName = name; this.previewUrl = URL.createObjectURL(blob); this.previewSafeUrl = this.sanitizer.bypassSecurityTrustResourceUrl(this.previewUrl); }, error: error => this.uploadMessage = error.error?.message ?? 'No se pudo abrir el PDF.' });
+  }
+  closePreview(): void { if (this.previewUrl) URL.revokeObjectURL(this.previewUrl); this.previewUrl = null; this.previewSafeUrl = null; this.previewFileName = ''; }
 
   uploadFile(event: Event): void { const file = (event.target as HTMLInputElement).files?.[0]; if (file) this.uploadSelectedFile(file); }
   onFileDrop(event: DragEvent): void { event.preventDefault(); const file = event.dataTransfer?.files?.[0]; if (file) this.uploadSelectedFile(file); }
-  private uploadSelectedFile(file: File): void { if (!this.session || this.isUploading || this.isLoadingFiles || this.isCategoryView) return; const extension = file.name.split('.').pop()?.toLowerCase() ?? ''; if (!this.allowedExtensions.includes(extension)) { this.uploadMessage = 'Formato no permitido. Use PDF, Word o Excel.'; return; } this.isUploading = true; this.uploadMessage = `Cargando ${file.name}…`; const data = new FormData(); data.append('file', file); this.http.post<{ ok: boolean; folder: string; message: string }>(`${this.rootApi}/documents`, data, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: ({ folder, message }) => { this.isUploading = false; this.currentFolder = folder; this.uploadMessage = message || 'Archivo cargado correctamente.'; this.loadFiles(false); }, error: error => { this.isUploading = false; this.uploadMessage = error.error?.message ?? 'No se pudo cargar el archivo.'; } }); }
+  private uploadSelectedFile(file: File): void { if (!this.session || this.isUploading || this.isLoadingFiles || this.isCategoryView) return; const extension = file.name.split('.').pop()?.toLowerCase() ?? ''; if (!this.allowedExtensions.includes(extension)) { this.uploadMessage = 'Formato no permitido. Use PDF, Word o Excel.'; return; } this.isUploading = true; this.uploadMessage = `Cargando ${file.name}…`; const data = new FormData(); data.append('file', file); data.append('path', this.currentPath); this.http.post<{ ok: boolean; folder: string; message: string }>(`${this.rootApi}/documents`, data, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: ({ folder, message }) => { this.isUploading = false; this.currentFolder = folder; this.uploadMessage = message || 'Archivo cargado correctamente.'; this.loadFiles(false); }, error: error => { this.isUploading = false; this.uploadMessage = error.error?.message ?? 'No se pudo cargar el archivo.'; } }); }
   deleteFile(name: string): void { this.requestDelete({ name, type: 'file' }); }
 
   createPreRegistration(): void {
