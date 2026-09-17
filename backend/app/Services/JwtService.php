@@ -14,7 +14,7 @@ final class JwtService
     public function issue(array $user): array
     {
         $expiresAt = time() + ($this->durationMinutes * 60);
-        $payload = ['sub' => $user['id'], 'username' => $user['username'], 'cedula' => $user['cedula'] ?? null, 'role' => $user['role'], 'subrole' => $user['subrole'], 'exp' => $expiresAt];
+        $payload = ['sub' => $user['id'], 'username' => $user['username'], 'cedula' => $user['cedula'] ?? null, 'lastName' => $user['lastName'] ?? null, 'role' => $user['role'], 'subrole' => $user['subrole'], 'exp' => $expiresAt];
         $header = $this->base64Url(json_encode(['alg' => 'HS256', 'typ' => 'JWT'], JSON_THROW_ON_ERROR));
         $body = $this->base64Url(json_encode($payload, JSON_THROW_ON_ERROR));
         $signature = $this->base64Url(hash_hmac('sha256', "{$header}.{$body}", $this->secret, true));

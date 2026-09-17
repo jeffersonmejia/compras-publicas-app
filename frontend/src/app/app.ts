@@ -4,7 +4,7 @@ import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
 type RoleCode = 'contratacion_publica' | 'bienes_activos_fijos' | 'contador' | 'director' | 'operador';
-type SessionData = { token: string; expiresAt: number; user: { id: number; username: string; name: string; cedula: string; role: RoleCode; subrole: string | null } };
+type SessionData = { token: string; expiresAt: number; user: { id: number; username: string; name: string; cedula: string; lastName?: string; role: RoleCode; subrole: string | null } };
 type CloudFile = { name: string; type: 'file' | 'folder' };
 type PreRegistration = { id: number; cedula: string; role_code: string; status: string; first_names: string | null; last_names: string | null; is_active: number; created_by: number; created_at: string };
 
@@ -32,7 +32,10 @@ export class App implements OnInit {
   selectedFileRole = 'contratacion_publica';
   allowedExtensions: string[] = ['pdf', 'doc', 'docx', 'xls', 'xlsx'];
   isUploading = false;
+  isLoadingFiles = false;
   uploadMessage = '';
+  currentFolder = '';
+  isCategoryView = false;
   activeHomeView: 'files' | 'pre-registration' = 'files';
   cedula = '';
   preRegistrationRole = 'operador';
@@ -60,7 +63,7 @@ export class App implements OnInit {
       const session = JSON.parse(rawSession) as SessionData;
       if (session.expiresAt * 1000 <= Date.now()) return this.logout();
       this.http.get(`${this.apiBase}/session`, { headers: new HttpHeaders({ Authorization: `Bearer ${session.token}` }) }).subscribe({
-        next: () => { this.session = session; this.authMode = 'home'; this.isRestoringSession = false; this.navigate('/home'); this.loadFiles(); },
+        next: () => { this.session = session; this.authMode = 'home'; this.isRestoringSession = false; this.navigate('/home'); this.loadDocumentConfig(); this.loadFiles(); },
         error: () => this.logout(),
       });
     } catch { this.logout(); }
@@ -108,10 +111,12 @@ export class App implements OnInit {
     this.navigate('/login');
   }
 
-  loadFiles(): void {
+  loadFiles(clearMessage = true): void {
     if (!this.session) return;
+    this.isLoadingFiles = true;
+    if (clearMessage) this.uploadMessage = '';
     const role = this.session.user.role === 'contratacion_publica' ? this.selectedFileRole : this.session.user.role;
-    this.http.get<{ files: CloudFile[] }>(`${this.rootApi}/documents?role=${role}`, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: ({ files }) => this.files = files, error: () => this.files = [] });
+    this.http.get<{ files: CloudFile[]; folder: string; category: boolean }>(`${this.rootApi}/documents?role=${role}`, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: ({ files, folder, category }) => { this.files = files; this.currentFolder = folder; this.isCategoryView = category; this.isLoadingFiles = false; }, error: () => { this.files = []; this.currentFolder = ''; this.isCategoryView = false; this.isLoadingFiles = false; this.uploadMessage = 'No se pudo consultar la carpeta de archivos.'; } });
   }
 
   loadDocumentConfig(): void {
@@ -121,7 +126,7 @@ export class App implements OnInit {
 
   uploadFile(event: Event): void { const file = (event.target as HTMLInputElement).files?.[0]; if (file) this.uploadSelectedFile(file); }
   onFileDrop(event: DragEvent): void { event.preventDefault(); const file = event.dataTransfer?.files?.[0]; if (file) this.uploadSelectedFile(file); }
-  private uploadSelectedFile(file: File): void { if (!this.session || this.isUploading) return; const extension = file.name.split('.').pop()?.toLowerCase() ?? ''; if (!this.allowedExtensions.includes(extension)) { this.uploadMessage = 'Formato no permitido. Use PDF, Word o Excel.'; return; } this.isUploading = true; this.uploadMessage = ''; const data = new FormData(); data.append('file', file); this.http.post(`${this.rootApi}/documents`, data, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: () => { this.isUploading = false; this.uploadMessage = 'Archivo cargado correctamente.'; this.loadFiles(); }, error: error => { this.isUploading = false; this.uploadMessage = error.error?.message ?? 'No se pudo cargar el archivo.'; } }); }
+  private uploadSelectedFile(file: File): void { if (!this.session || this.isUploading || this.isLoadingFiles || this.isCategoryView) return; const extension = file.name.split('.').pop()?.toLowerCase() ?? ''; if (!this.allowedExtensions.includes(extension)) { this.uploadMessage = 'Formato no permitido. Use PDF, Word o Excel.'; return; } this.isUploading = true; this.uploadMessage = `Cargando ${file.name}…`; const data = new FormData(); data.append('file', file); this.http.post<{ ok: boolean; folder: string; message: string }>(`${this.rootApi}/documents`, data, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: ({ folder, message }) => { this.isUploading = false; this.currentFolder = folder; this.uploadMessage = message || 'Archivo cargado correctamente.'; this.loadFiles(false); }, error: error => { this.isUploading = false; this.uploadMessage = error.error?.message ?? 'No se pudo cargar el archivo.'; } }); }
   deleteFile(name: string): void { if (!this.session) return; this.http.delete(`${this.rootApi}/documents/${encodeURIComponent(name)}`, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe(() => this.loadFiles()); }
 
   createPreRegistration(): void {
