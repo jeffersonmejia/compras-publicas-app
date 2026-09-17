@@ -17,7 +17,7 @@ final class AuthService
         $user = $this->users->findByUsername(trim($username));
         if ($user === null || !$user->isActive || !password_verify($password, $user->passwordHash)) return null;
 
-        $identity = ['id' => $user->id, 'username' => $user->username, 'role' => $user->role, 'subrole' => $user->subrole];
+        $identity = ['id' => $user->id, 'username' => $user->username, 'name' => $user->name, 'cedula' => $user->cedula, 'lastName' => $user->lastName, 'role' => $user->role, 'subrole' => $user->subrole];
         return [...$this->jwt->issue($identity), 'user' => $identity];
     }
 

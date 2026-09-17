@@ -5,25 +5,40 @@
     <section class="home-page" aria-label="Inicio de Compras Públicas">
       <header class="home-header">
         <a class="home-brand" href="/"><img src="/gadmsd-intranet.png" alt="Municipalidad Santo Domingo" /><span>Compras Públicas</span></a>
-        <details class="session-menu">
-          <summary><span class="material-symbols-outlined" aria-hidden="true">account_circle</span><span>{{ sessionRoleLabel }}</span><span class="material-symbols-outlined menu-arrow" aria-hidden="true">expand_more</span></summary>
-          <div class="session-panel">
-            <span class="session-user">{{ session?.user?.username }}</span>
-            <span class="session-role"><span class="material-symbols-outlined" aria-hidden="true">badge</span>{{ sessionRoleLabel }}</span>
-            <button type="button" (click)="logout()"><span class="material-symbols-outlined" aria-hidden="true">logout</span>Cerrar sesión</button>
-          </div>
-        </details>
+        <button type="button" class="logout-button" (click)="logout()"><span class="material-symbols-outlined" aria-hidden="true">logout</span>Cerrar sesión</button>
       </header>
       <main class="home-content">
-        <span class="material-symbols-outlined home-icon" aria-hidden="true">dashboard</span>
-        <p class="home-eyebrow">PANEL PRINCIPAL</p>
-        <h1>Bienvenido a Compras Públicas</h1>
-        <p>Seleccione un módulo para comenzar a gestionar la documentación institucional.</p>
-        <div class="home-cards">
-          <article><span class="material-symbols-outlined" aria-hidden="true">folder_open</span><h2>Procesos</h2><p>Consulte los procesos de compra.</p></article>
-          <article><span class="material-symbols-outlined" aria-hidden="true">description</span><h2>Documentos</h2><p>Organice los archivos institucionales.</p></article>
-          <article><span class="material-symbols-outlined" aria-hidden="true">notifications</span><h2>Novedades</h2><p>Revise actividad reciente.</p></article>
-        </div>
+        <aside class="home-aside">
+          <button type="button" [class.active]="activeHomeView === 'files'" (click)="activeHomeView = 'files'"><span class="material-symbols-outlined" aria-hidden="true">folder_open</span> Archivos</button>
+          @if (canPreRegister) { <button type="button" [class.active]="activeHomeView === 'pre-registration'" (click)="activeHomeView = 'pre-registration'; loadPreRegistrations()"><span class="material-symbols-outlined" aria-hidden="true">person_add</span> Pre-registro</button> }
+        </aside>
+        <section class="home-workspace">
+          <p class="home-eyebrow">PANEL PRINCIPAL</p>
+          <h1>Hola, {{ session?.user?.name || session?.user?.username }}</h1>
+          <p class="current-role"><span class="material-symbols-outlined" aria-hidden="true">badge</span>{{ sessionRoleLabel }}</p>
+          @if (activeHomeView === 'files') {
+            <div class="files-toolbar"><p class="workspace-description">Archivos disponibles en Nextcloud. Permitidos: PDF, Word y Excel.</p>@if (session?.user?.role === 'contratacion_publica') { <select [(ngModel)]="selectedFileRole" (change)="loadFiles()"><option value="contratacion_publica">Contratación Pública</option><option value="bienes_activos_fijos">Bienes y Activos Fijos</option><option value="contador">Contador</option><option value="director">Director</option><optgroup label="Operador"><option value="informatica">Informática</option><option value="talento_humano">Talento Humano</option><option value="comunicacion">Comunicación</option></optgroup></select> }<label class="upload-button"><span class="material-symbols-outlined" aria-hidden="true">upload_file</span>Subir archivo<input type="file" [attr.accept]="fileAccept" (change)="uploadFile($event)" /></label></div><div class="drop-zone" [class.loading]="isUploading" (dragover)="$event.preventDefault()" (drop)="onFileDrop($event)"><span class="material-symbols-outlined" aria-hidden="true">{{ isUploading ? 'progress_activity' : 'cloud_upload' }}</span><span>{{ isUploading ? 'Cargando archivo…' : 'Arrastre un archivo aquí o use el botón Subir archivo' }}</span></div>@if (uploadMessage) { <p class="upload-message">{{ uploadMessage }}</p> }
+            @if (files.length) { <div class="file-list">@for (file of files; track file.name) { <article><span class="material-symbols-outlined" aria-hidden="true">{{ file.type === 'folder' ? 'folder' : 'description' }}</span><span>{{ file.name }}</span><button type="button" class="delete-file" (click)="deleteFile(file.name)" aria-label="Eliminar archivo"><span class="material-symbols-outlined" aria-hidden="true">delete</span></button></article> }</div> }
+            @else { <div class="empty-state"><span class="material-symbols-outlined" aria-hidden="true">cloud_off</span><p>No hay archivos disponibles todavía.</p></div> }
+          } @else {
+            <p class="workspace-description">Autorice el registro inicial ingresando la cédula.</p>
+            <form class="pre-registration-form" (ngSubmit)="createPreRegistration()"><div><label for="cedula">Cédula</label><input id="cedula" name="cedula" [(ngModel)]="cedula" inputmode="numeric" maxlength="10" required placeholder="Ingrese 10 dígitos" /></div><div><label for="pre_registration_role">Rol asignado</label><select id="pre_registration_role" name="preRegistrationRole" [(ngModel)]="preRegistrationRole" required><option value="contratacion_publica">Contratación Pública</option><option value="bienes_activos_fijos">Bienes y Activos Fijos</option><option value="contador">Contador</option><option value="director">Director</option><optgroup label="Operador"><option value="informatica">Informática</option><option value="talento_humano">Talento Humano</option><option value="comunicacion">Comunicación</option></optgroup></select></div><button type="submit"><span class="material-symbols-outlined" aria-hidden="true">person_add</span> Crear pre-registro</button></form>
+            @if (preRegistrationMessage) { <p class="form-message">{{ preRegistrationMessage }}</p> }
+            <div class="pre-registration-table"><div class="table-heading"><h2>Pre-registros realizados</h2><span>{{ preRegistrations.length }} de 5</span></div><table><thead><tr><th>No.</th><th>Cédula</th><th>Fecha</th><th>Estado</th><th>Activo</th><th>Info.</th></tr></thead><tbody>@for (item of preRegistrations; track item.id; let index = $index) { <tr [class.own-row]="item.cedula === session?.user?.cedula"><td>{{ ((preRegistrationPage - 1) * 5) + index + 1 }}</td><td>{{ item.cedula }} @if (item.cedula === session?.user?.cedula) { <small>(tú)</small> }</td><td>{{ item.created_at | date:'dd/MM/yyyy' }}</td><td><span class="status" [class.registered]="item.status === 'registrado'">{{ item.status === 'registrado' ? 'Registrado' : 'Pre-registro' }}</span></td><td><button class="toggle" type="button" [class.on]="item.is_active" [disabled]="item.cedula === session?.user?.cedula" (click)="togglePreRegistration(item.id)" [attr.aria-label]="item.is_active ? 'Desactivar' : 'Activar'"><span></span></button></td><td>@if (item.status === 'registrado') { <button class="view-record" type="button" (click)="selectedPreRegistration = item"><span class="material-symbols-outlined" aria-hidden="true">visibility</span> Ver</button> } @else { <button class="view-record" type="button" disabled><span class="material-symbols-outlined" aria-hidden="true">visibility</span> Ver</button> }</td></tr> } @empty { <tr><td colspan="6" class="no-rows">No existen pre-registros.</td></tr> }</tbody></table><div class="pagination"><button type="button" [disabled]="preRegistrationPage === 1" (click)="loadPreRegistrations(preRegistrationPage - 1)">Anterior</button><span>Página {{ preRegistrationPage }} de {{ preRegistrationPages }}</span><button type="button" [disabled]="preRegistrationPage === preRegistrationPages" (click)="loadPreRegistrations(preRegistrationPage + 1)">Siguiente</button></div></div>
+            @if (selectedPreRegistration) {
+              <div class="modal-backdrop" (click)="selectedPreRegistration = null">
+                <section class="record-modal" role="dialog" aria-modal="true" aria-label="Información del registro" (click)="$event.stopPropagation()">
+                  <div class="modal-header"><h2>Información del registro</h2><button type="button" (click)="selectedPreRegistration = null" aria-label="Cerrar"><span class="material-symbols-outlined" aria-hidden="true">close</span></button></div>
+                  <label>Cédula<input [value]="selectedPreRegistration.cedula" readonly /></label>
+                  <label>Nombres completos<input [value]="selectedPreRegistration.first_names || ''" readonly /></label>
+                  <label>Apellidos completos<input [value]="selectedPreRegistration.last_names || ''" readonly /></label>
+                  <label>Rol asignado<input [value]="selectedPreRegistration.role_code" readonly /></label>
+                  <label>Estado<input value="Registrado" readonly /></label>
+                </section>
+              </div>
+            }
+          }
+        </section>
       </main>
     </section>
   } @else {
@@ -36,7 +51,7 @@
         <p>Gestione los procesos y la documentación institucional desde un solo lugar.</p>
       </div>
     </aside>
-    <section id="login" [class.recovery-mode]="authMode === 'recovery'" aria-label="Compras Públicas">
+    <section id="login" [class.recovery-mode]="authMode === 'recovery'" [class.registration-mode]="authMode === 'registration'" aria-label="Compras Públicas">
     <h1 class="mobile-logo">
       <a href="/" aria-label="Compras Públicas">
         <img src="/gadmsd-intranet.png" alt="Municipalidad Santo Domingo" />
@@ -71,12 +86,13 @@
           </p>
           <p class="forgetmenot"><label for="rememberme"><input id="rememberme" name="remember" type="checkbox" [(ngModel)]="remember" /> Recuérdame</label></p>
           <div class="form-actions">
-            <button class="help-link" type="button" (click)="openRecovery()"><span class="material-symbols-outlined" aria-hidden="true">help</span> ¿Olvidaste tu contraseña?</button>
+            <button class="register-link" type="button" (click)="openRegistration()"><span class="material-symbols-outlined" aria-hidden="true">how_to_reg</span> Registrarse</button>
             <button id="wp-submit" type="submit" [disabled]="isSubmitting">{{ isSubmitting ? 'Accediendo…' : 'Acceder' }} <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></button>
           </div>
+          <button class="help-link" type="button" (click)="openRecovery()"><span class="material-symbols-outlined" aria-hidden="true">help</span> ¿Olvidaste tu contraseña?</button>
         </form>
       </div>
-    } @else {
+    } @else if (authMode === 'recovery') {
       <div class="mode-content recovery-content">
         <span class="material-symbols-outlined recovery-icon" aria-hidden="true">key</span>
         <p class="login-title">Recuperar contraseña</p>
@@ -92,9 +108,20 @@
           </div>
         </form>
       </div>
+    } @else {
+      <div class="mode-content registration-content">
+        <span class="material-symbols-outlined recovery-icon" aria-hidden="true">how_to_reg</span>
+        <p class="login-title">Crear cuenta</p>
+        <p class="login-subtitle">Para registrarte, solicita al encargado de TI que autorice tu pre-registro.</p>
+        @if (!verifiedCedula) {
+          <form id="verify-registration" (ngSubmit)="verifyPreRegistration()"><p><label for="registration_cedula">Cédula pre-registrada</label><span class="field-control"><span class="material-symbols-outlined" aria-hidden="true">badge</span><input id="registration_cedula" name="registrationCedula" class="input" [(ngModel)]="registrationCedula" inputmode="numeric" maxlength="10" required /></span></p><div class="recovery-actions"><button class="back-button" type="button" (click)="closeRecovery()"><span class="material-symbols-outlined" aria-hidden="true">arrow_back</span> Volver</button><button id="wp-submit" type="submit">Continuar <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></button></div></form>
+        } @else {
+          <form id="registration-form" (ngSubmit)="completeRegistration()"><p><label for="first_names">Nombres completos</label><span class="field-control"><span class="material-symbols-outlined input-icon" aria-hidden="true">person</span><input id="first_names" name="firstNames" class="input" [(ngModel)]="firstNames" required /></span></p><p><label for="last_names">Apellidos completos</label><span class="field-control"><span class="material-symbols-outlined input-icon" aria-hidden="true">group</span><input id="last_names" name="lastNames" class="input" [(ngModel)]="lastNames" required /></span></p><p><label for="loaded_cedula">Cédula</label><span class="field-control"><span class="material-symbols-outlined input-icon" aria-hidden="true">badge</span><input id="loaded_cedula" class="input" [value]="verifiedCedula" readonly /></span></p><div class="registration-actions"><button class="back-button" type="button" (click)="verifiedCedula = ''"><span class="material-symbols-outlined" aria-hidden="true">arrow_back</span> Cambiar cédula</button><button class="register-submit" type="submit"><span class="material-symbols-outlined" aria-hidden="true">how_to_reg</span> Registrarse</button></div></form>
+        }
+        @if (registrationMessage) { <p class="form-message">{{ registrationMessage }}</p> }
+      </div>
     }
 
-    <p id="backtoblog"><a href="https://www.santodomingo.gob.ec/?page_id=3597"><span class="material-symbols-outlined" aria-hidden="true">arrow_back</span> Volver a Intranet</a></p>
     </section>
   </section>
   }

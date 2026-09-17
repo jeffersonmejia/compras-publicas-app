@@ -1,0 +1,8 @@
+* text=auto eol=lf
+*.html text working-tree-encoding=UTF-8
+*.ts text working-tree-encoding=UTF-8
+*.scss text working-tree-encoding=UTF-8
+*.php text working-tree-encoding=UTF-8
+*.md text working-tree-encoding=UTF-8
+*.json text working-tree-encoding=UTF-8
+*.env.example text working-tree-encoding=UTF-8
