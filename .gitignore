@@ -8,6 +8,7 @@
 
 # Node
 /node_modules
+/frontend/node_modules
 # Credenciales y configuraciones locales: solo se versiona la plantilla.
 .env*
 !.env.example
@@ -44,3 +45,9 @@ __screenshots__/
 # System files
 .DS_Store
 Thumbs.db
+
+# Instrucciones locales para agentes
+AGENTS.md
+
+# Documentación local de referencia
+README.md

@@ -1,0 +1,30 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Repositories;
+
+use App\Models\User;
+use PDO;
+
+final class UserRepository
+{
+    public function __construct(private readonly PDO $database)
+    {
+    }
+
+    public function findByUsername(string $username): ?User
+    {
+        $statement = $this->database->prepare(
+            'SELECT id, username, password_hash, role, is_active FROM users WHERE username = :username LIMIT 1'
+        );
+        $statement->execute(['username' => $username]);
+        $row = $statement->fetch();
+
+        if ($row === false) {
+            return null;
+        }
+
+        return new User((int) $row['id'], $row['username'], $row['password_hash'], $row['role'], (bool) $row['is_active']);
+    }
+}

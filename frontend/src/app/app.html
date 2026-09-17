@@ -1,0 +1,38 @@
+<main class="login">
+  <section id="login" aria-label="Compras Públicas">
+    <h1>
+      <a href="/" aria-label="Compras Públicas">
+        <img src="/gadmsd-intranet.png" alt="Municipalidad Santo Domingo" />
+        <span>Compras Públicas</span>
+      </a>
+    </h1>
+
+    @if (loginMessage) {
+      <div id="login_error" role="alert">
+        <strong>Error</strong>: <b>Ingresar el nombre de usuario y contraseña del correo electrónico institucional</b><br />
+        Nombre de usuario: no válidos o contraseña incorrecta.
+      </div>
+    }
+
+    <form id="loginform" (ngSubmit)="onSubmit()">
+      <p>
+        <label for="user_login">Nombre de usuario o correo electrónico</label>
+        <input id="user_login" name="username" type="text" class="input" autocapitalize="off" autocomplete="username" [(ngModel)]="username" required />
+      </p>
+      <p>
+        <label for="user_pass">Contraseña</label>
+        <span class="password-wrapper">
+          <input id="user_pass" name="password" [type]="showPassword ? 'text' : 'password'" class="input" autocomplete="current-password" [(ngModel)]="password" required />
+          <button class="toggle-password" type="button" (click)="showPassword = !showPassword" [attr.aria-label]="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5C6.5 5 2.3 9.3 1 12c1.3 2.7 5.5 7 11 7s9.7-4.3 11-7c-1.3-2.7-5.5-7-11-7Zm0 11.5A4.5 4.5 0 1 1 12 7a4.5 4.5 0 0 1 0 9.5Zm0-2A2.5 2.5 0 1 0 12 9a2.5 2.5 0 0 0 0 5.5Z" /></svg>
+          </button>
+        </span>
+      </p>
+      <p class="forgetmenot"><label for="rememberme"><input id="rememberme" name="remember" type="checkbox" [(ngModel)]="remember" /> Recuérdame</label></p>
+      <p class="submit"><button id="wp-submit" type="submit">Acceder</button></p>
+    </form>
+
+    <p id="nav"><a href="#recuperar">¿Has olvidado tu contraseña?</a></p>
+    <p id="backtoblog"><a href="https://www.santodomingo.gob.ec/?page_id=3597">← Volver a Intranet – GADMSD</a></p>
+  </section>
+</main>
