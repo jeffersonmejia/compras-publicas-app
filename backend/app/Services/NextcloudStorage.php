@@ -6,7 +6,7 @@ namespace App\Services;
 
 final class NextcloudStorage
 {
-    public const ALLOWED_EXTENSIONS = ['pdf', 'doc', 'docx', 'xls', 'xlsx'];
+    public const ALLOWED_EXTENSIONS = ['pdf'];
 
     /** @param array<string, string> $env */
     public function __construct(private readonly array $env) {}
@@ -16,20 +16,16 @@ final class NextcloudStorage
         return ($this->env['NEXTCLOUD_BASE_URL'] ?? '') !== '' && ($this->env['NEXTCLOUD_USERNAME'] ?? '') !== '' && ($this->env['NEXTCLOUD_APP_PASSWORD'] ?? '') !== '';
     }
 
-    public function personalFolder(string $role, string $cedula, string $lastName): string
+    public function personalFolder(string $role, string $cedula = '', string $lastName = ''): string
     {
-        $safeRole = preg_replace('/[^a-z0-9_]/', '', strtolower($role)) ?: 'usuario';
-        $safeCedula = preg_replace('/\D/', '', $cedula) ?: 'sin_cedula';
-        $normalizedName = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $lastName) ?: $lastName;
-        $safeLastName = preg_replace('/[^a-z0-9]/', '', strtolower($normalizedName)) ?: 'sin_apellido';
-        return "{$safeRole}_{$safeCedula}_{$safeLastName}";
+        return 'documentos';
     }
 
     /** @return list<array{name:string, type:string}> */
     public function listFiles(string $folder, string $relativePath = ''): array
     {
         $path = $this->childPath($folder, $relativePath);
-        if ($path === null || !$this->ensureFolder($path)) return [];
+        if ($path === null || ($relativePath === '' ? !$this->ensureCommonFolders($folder) : !$this->ensureFolder($path))) return [];
         $response = $this->request('PROPFIND', $path . '/', ['Depth: 1']);
         if ($response['status'] < 200 || $response['status'] >= 300 || !is_string($response['body'])) return [];
         $xml = simplexml_load_string($response['body']);
@@ -48,28 +44,14 @@ final class NextcloudStorage
     /** @return list<array{name:string, type:string}> */
     public function listFoldersByRole(string $role): array
     {
-        if (!$this->isConfigured()) return [];
-        $response = $this->request('PROPFIND', '', ['Depth: 1']);
-        if ($response['status'] < 200 || $response['status'] >= 300 || !is_string($response['body'])) return [];
-        $xml = simplexml_load_string($response['body']);
-        if ($xml === false) return [];
-        $xml->registerXPathNamespace('d', 'DAV:');
-        $nodes = $xml->xpath('//d:response') ?: [];
-        $prefix = strtolower($role) . '_';
-        $folders = [];
-        foreach (array_slice($nodes, 1) as $node) {
-            $href = (string) ($node->xpath('./d:href')[0] ?? '');
-            $name = rawurldecode(basename(rtrim($href, '/')));
-            if (str_ends_with($href, '/') && str_starts_with(strtolower($name), $prefix)) $folders[] = ['name' => $name, 'type' => 'folder'];
-        }
-        return $folders;
+        return array_values(array_filter($this->listFiles('documentos'), static fn (array $file): bool => $file['type'] === 'folder'));
     }
 
     public function upload(string $folder, array $file, string $relativePath = ''): bool
     {
         $extension = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
         $path = $this->childPath($folder, $relativePath);
-        if ($path === null || !$this->isConfigured() || !in_array($extension, self::ALLOWED_EXTENSIONS, true) || !isset($file['tmp_name'], $file['name']) || !is_uploaded_file($file['tmp_name']) || !$this->ensureFolder($path)) return false;
+        if ($path === null || !$this->ensureCommonFolders($folder) || !$this->isConfigured() || !in_array($extension, self::ALLOWED_EXTENSIONS, true) || !isset($file['tmp_name'], $file['name']) || !is_uploaded_file($file['tmp_name']) || !$this->ensureFolder($path)) return false;
         $handle = fopen($file['tmp_name'], 'rb');
         if ($handle === false) return false;
         $response = $this->request('PUT', $path . '/' . basename((string) $file['name']), [], $handle, filesize($file['tmp_name']));
@@ -80,7 +62,7 @@ final class NextcloudStorage
     public function delete(string $folder, string $name, string $relativePath = ''): bool
     {
         $path = $this->childPath($folder, $relativePath);
-        if ($path === null || !$this->isConfigured() || !$this->validEntryName($name)) return false;
+        if ($path === null || !$this->isConfigured() || !$this->validEntryName($name) || ($relativePath === '' && in_array(strtolower($name), ['procesos', 'pagos'], true))) return false;
         $response = $this->request('DELETE', $path . '/' . basename($name));
         return $response['status'] >= 200 && $response['status'] < 300;
     }
@@ -97,16 +79,26 @@ final class NextcloudStorage
 
     public function createFolder(string $folder, string $name, string $relativePath = ''): bool
     {
-        $path = $this->childPath($folder, $relativePath);
-        if ($path === null || !$this->ensureFolder($path) || !$this->validEntryName($name)) return false;
-        $response = $this->request('MKCOL', $path . '/' . trim($name));
-        return $response['status'] === 201;
+        return false;
+    }
+
+    public function ensureDirectory(string $folder, string $relativePath): bool
+    {
+        $relativePath = trim(str_replace('\\', '/', $relativePath), '/');
+        if ($relativePath === '') return $this->ensureCommonFolders($folder);
+        $segments = explode('/', $relativePath); $current = trim($folder, '/');
+        foreach ($segments as $segment) {
+            if (!$this->validEntryName($segment)) return false;
+            $current .= '/' . $segment;
+            if (!$this->ensureFolder($current)) return false;
+        }
+        return true;
     }
 
     public function renameFolder(string $folder, string $currentName, string $newName, string $relativePath = ''): bool
     {
         $path = $this->childPath($folder, $relativePath);
-        if ($path === null || !$this->validEntryName($currentName) || !$this->validEntryName($newName)) return false;
+        if ($path === null || !$this->validEntryName($currentName) || !$this->validEntryName($newName) || ($relativePath === '' && in_array(strtolower($currentName), ['procesos', 'pagos'], true))) return false;
         $destination = rtrim($this->env['NEXTCLOUD_BASE_URL'], '/') . '/remote.php/dav/files/' . rawurlencode($this->env['NEXTCLOUD_USERNAME']) . '/' . implode('/', array_map('rawurlencode', explode('/', $path))) . '/' . rawurlencode(trim($newName));
         $response = $this->request('MOVE', $path . '/' . trim($currentName), ['Destination: ' . $destination, 'Overwrite: F']);
         return $response['status'] >= 200 && $response['status'] < 300;
@@ -117,6 +109,13 @@ final class NextcloudStorage
         if (!$this->isConfigured() || !function_exists('curl_init')) return false;
         $response = $this->request('MKCOL', $folder);
         return in_array($response['status'], [201, 301, 405], true);
+    }
+
+    private function ensureCommonFolders(string $folder): bool
+    {
+        return $this->ensureFolder($folder)
+            && $this->ensureFolder($folder . '/procesos')
+            && $this->ensureFolder($folder . '/pagos');
     }
 
     public function childPath(string $root, string $relativePath): ?string

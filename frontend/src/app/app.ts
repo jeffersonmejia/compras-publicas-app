@@ -9,6 +9,9 @@ type SessionData = { token: string; expiresAt: number; user: { id: number; usern
 type CloudFile = { name: string; type: 'file' | 'folder' };
 type TreeNode = { name: string; type: 'folder'; path: string; expanded: boolean; loaded: boolean; children: TreeNode[] };
 type PreRegistration = { id: number; cedula: string; role_code: string; status: string; first_names: string | null; last_names: string | null; is_active: number; created_by: number; created_at: string };
+type RoleItem = { code: string; label: string; parent_role: string | null; is_active: number };
+type PurchaseItem = { id: number; name: string; slug: string; folder: string; delegated_name: string; delegated_last_name: string; role: string; subrole: string | null; is_active: number };
+type DelegatedUser = { id: number; username: string; name: string; last_name: string; role: string; subrole: string | null };
 
 @Component({
   selector: 'app-root',
@@ -33,7 +36,7 @@ export class App implements OnInit {
   isRestoringSession = true;
   files: CloudFile[] = [];
   selectedFileRole = 'mine';
-  allowedExtensions: string[] = ['pdf', 'doc', 'docx', 'xls', 'xlsx'];
+  allowedExtensions: string[] = ['pdf'];
   isUploading = false;
   isLoadingFiles = false;
   uploadMessage = '';
@@ -49,11 +52,30 @@ export class App implements OnInit {
   folderName = '';
   folderToRename = '';
   deleteTarget: CloudFile | null = null;
-  activeHomeView: 'files' | 'pre-registration' = 'files';
+  activeHomeView: 'files' | 'pre-registration' | 'roles' | 'delegation' = 'files';
   cedula = '';
   preRegistrationRole = 'operador';
   preRegistrationMessage = '';
   preRegistrations: PreRegistration[] = [];
+  isLoadingPreRegistrations = false;
+  roles: RoleItem[] = [];
+  isLoadingRoles = false;
+  roleCode = '';
+  roleLabel = '';
+  roleParent = '';
+  roleMessage = '';
+  rolePage = 1;
+  rolePages = 1;
+  purchases: PurchaseItem[] = [];
+  purchaseName = '';
+  purchaseRole = 'operador';
+  purchaseSubrole = '';
+  purchaseSearch = '';
+  purchaseUsers: DelegatedUser[] = [];
+  selectedPurchaseUser: DelegatedUser | null = null;
+  purchaseMessage = '';
+  isSearchingPurchaseUsers = false;
+  purchaseSearchModal = false;
   preRegistrationPage = 1;
   preRegistrationPages = 1;
   selectedPreRegistration: PreRegistration | null = null;
@@ -86,13 +108,21 @@ export class App implements OnInit {
     const labels: Record<RoleCode, string> = {
       contratacion_publica: 'Contratación Pública', bienes_activos_fijos: 'Bienes y Activos Fijos', contador: 'Contador', director: 'Director', operador: 'Operador',
     };
-    return this.session ? labels[this.session.user.role] : '';
+    const subroles: Record<string, string> = { administrativo: 'Administrativo', financiero: 'Financiero', medico: 'Médico', planificacion: 'Planificación', informatica: 'Informática', talento_humano: 'Talento Humano', comunicacion: 'Comunicación' };
+    if (!this.session) return '';
+    const role = labels[this.session.user.role];
+    const subrole = this.session.user.subrole ? subroles[this.session.user.subrole] : '';
+    return subrole ? `${role} (${subrole})` : role;
   }
+  get sessionRoleIcon(): string { const icons: Record<string, string> = { administrativo: 'admin_panel_settings', financiero: 'account_balance', medico: 'medical_services', planificacion: 'event_note', informatica: 'computer', talento_humano: 'groups', comunicacion: 'campaign', operador: 'manage_accounts' }; return this.session?.user.subrole ? (icons[this.session.user.subrole] ?? 'manage_accounts') : (this.session?.user.role === 'operador' ? 'manage_accounts' : 'badge'); }
 
   get apiBase(): string { return `http://${window.location.hostname}/compras-publicas-api/api/auth`; }
   get rootApi(): string { return `http://${window.location.hostname}/compras-publicas-api/api`; }
   get fileAccept(): string { return this.allowedExtensions.map((extension) => `.${extension}`).join(','); }
-  get canPreRegister(): boolean { return this.session?.user.role === 'contratacion_publica'; }
+  get canPreRegister(): boolean { return this.session?.user.role === 'operador' && this.session.user.subrole === 'informatica'; }
+  get canDelegatePurchases(): boolean { return this.session?.user.role === 'director' && this.session.user.subrole === 'administrativo'; }
+  get canUploadCurrentPath(): boolean { const root = this.currentPath.split('/')[0].toLowerCase(); return root === 'procesos' || root === 'pagos'; }
+  get canManageRoles(): boolean { return this.canPreRegister; }
   get selectedFileRoleLabel(): string { const labels: Record<string, string> = { contratacion_publica: 'Contratación Pública', bienes_activos_fijos: 'Bienes y Activos Fijos', contador: 'Contador', director: 'Director', informatica: 'Informática', talento_humano: 'Talento Humano', comunicacion: 'Comunicación', mine: 'Mi carpeta' }; return this.selectedFileRole === 'mine' && this.currentFolder ? this.currentFolder : (labels[this.selectedFileRole] ?? 'Filtrar'); }
   get rootFolderLabel(): string { return this.rootFolderName || this.selectedFileRoleLabel; }
   get treeEntries(): Array<{ node: TreeNode; depth: number }> {
@@ -147,7 +177,7 @@ export class App implements OnInit {
     this.http.get<{ extensions: string[] }>(`${this.rootApi}/documents/config`, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: data => this.allowedExtensions = data.extensions });
   }
 
-  chooseFileFilter(role: string): void { this.selectedFileRole = role; this.currentPath = ''; this.treeNodes = []; this.loadFiles(); }
+  chooseFileFilter(role: string): void { if (this.isLoadingFiles || this.isUploading) return; this.selectedFileRole = role; this.currentPath = ''; this.treeNodes = []; this.loadFiles(); }
 
   private setTreeRoot(files: CloudFile[]): void { this.treeNodes = files.filter(file => file.type === 'folder').map(file => ({ name: file.name, type: 'folder', path: file.name, expanded: false, loaded: false, children: [] })); }
   private setTreeChildren(node: TreeNode, files: CloudFile[]): void { node.children = files.filter(file => file.type === 'folder').map(file => ({ name: file.name, type: 'folder', path: `${node.path}/${file.name}`, expanded: false, loaded: false, children: [] })); node.loaded = true; }
@@ -161,8 +191,9 @@ export class App implements OnInit {
   openFolder(path: string): void { if (this.isCategoryView) return; this.loadFiles(true, path); }
   goToRootFolder(): void { this.openFolder(''); }
   goToTreeFolder(node: TreeNode): void { this.openFolder(node.path); }
+  isProtectedFolder(name: string): boolean { return this.currentPath === '' && ['procesos', 'pagos'].includes(name.toLowerCase()); }
 
-  openCreateFolder(): void { this.folderName = ''; this.folderToRename = ''; this.folderModal = 'create'; }
+  openCreateFolder(): void { if (this.isLoadingFiles || this.isUploading) return; this.folderName = ''; this.folderToRename = ''; this.folderModal = 'create'; }
   openRenameFolder(name: string): void { this.folderName = name; this.folderToRename = name; this.folderModal = 'rename'; }
   closeFolderModal(): void { this.folderModal = null; this.folderName = ''; this.folderToRename = ''; }
   saveFolder(): void {
@@ -173,7 +204,7 @@ export class App implements OnInit {
       : this.http.patch(`${this.rootApi}/documents/folders/${encodeURIComponent(this.folderToRename)}`, { name: this.folderName.trim(), path: this.currentPath }, { headers });
     request.subscribe({ next: () => { this.uploadMessage = this.folderModal === 'create' ? 'Carpeta creada correctamente.' : 'Carpeta renombrada correctamente.'; this.closeFolderModal(); this.loadFiles(false); }, error: error => this.uploadMessage = error.error?.message ?? 'No se pudo guardar la carpeta.' });
   }
-  requestDelete(file: CloudFile): void { this.deleteTarget = file; }
+  requestDelete(file: CloudFile): void { if (file.type === 'folder' && this.currentPath === '' && ['procesos', 'pagos'].includes(file.name.toLowerCase())) return; this.deleteTarget = file; }
   cancelDelete(): void { this.deleteTarget = null; }
   confirmDelete(): void {
     if (!this.session || !this.deleteTarget) return;
@@ -194,7 +225,7 @@ export class App implements OnInit {
 
   uploadFile(event: Event): void { const file = (event.target as HTMLInputElement).files?.[0]; if (file) this.uploadSelectedFile(file); }
   onFileDrop(event: DragEvent): void { event.preventDefault(); const file = event.dataTransfer?.files?.[0]; if (file) this.uploadSelectedFile(file); }
-  private uploadSelectedFile(file: File): void { if (!this.session || this.isUploading || this.isLoadingFiles || this.isCategoryView) return; const extension = file.name.split('.').pop()?.toLowerCase() ?? ''; if (!this.allowedExtensions.includes(extension)) { this.uploadMessage = 'Formato no permitido. Use PDF, Word o Excel.'; return; } this.isUploading = true; this.uploadMessage = `Cargando ${file.name}…`; const data = new FormData(); data.append('file', file); data.append('path', this.currentPath); this.http.post<{ ok: boolean; folder: string; message: string }>(`${this.rootApi}/documents`, data, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: ({ folder, message }) => { this.isUploading = false; this.currentFolder = folder; this.uploadMessage = message || 'Archivo cargado correctamente.'; this.loadFiles(false); }, error: error => { this.isUploading = false; this.uploadMessage = error.error?.message ?? 'No se pudo cargar el archivo.'; } }); }
+  private uploadSelectedFile(file: File): void { if (!this.session || this.isUploading || this.isLoadingFiles || this.isCategoryView) return; if (!this.canUploadCurrentPath) { this.uploadMessage = 'Para subir archivos, entre primero a procesos o pagos.'; return; } const extension = file.name.split('.').pop()?.toLowerCase() ?? ''; if (!this.allowedExtensions.includes(extension)) { this.uploadMessage = 'Formato no permitido. Solo se aceptan archivos PDF.'; return; } this.isUploading = true; this.uploadMessage = `Cargando ${file.name}…`; const data = new FormData(); data.append('file', file); data.append('path', this.currentPath); this.http.post<{ ok: boolean; folder: string; message: string }>(`${this.rootApi}/documents`, data, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: ({ folder, message }) => { this.isUploading = false; this.currentFolder = folder; this.uploadMessage = message || 'Archivo cargado correctamente.'; this.loadFiles(false); }, error: error => { this.isUploading = false; this.uploadMessage = error.error?.message ?? 'No se pudo cargar el archivo.'; } }); }
   deleteFile(name: string): void { this.requestDelete({ name, type: 'file' }); }
 
   createPreRegistration(): void {
@@ -208,8 +239,22 @@ export class App implements OnInit {
 
   loadPreRegistrations(page = this.preRegistrationPage): void {
     if (!this.session || !this.canPreRegister) return;
-    this.http.get<{ items: PreRegistration[]; page: number; pages: number }>(`${this.rootApi}/pre-registrations?page=${page}`, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: data => { this.preRegistrations = data.items; this.preRegistrationPage = data.page; this.preRegistrationPages = data.pages; } });
+    this.isLoadingPreRegistrations = true;
+    this.http.get<{ items: PreRegistration[]; page: number; pages: number }>(`${this.rootApi}/pre-registrations?page=${page}`, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: data => { this.preRegistrations = data.items; this.preRegistrationPage = data.page; this.preRegistrationPages = data.pages; this.isLoadingPreRegistrations = false; }, error: () => { this.isLoadingPreRegistrations = false; } });
   }
+  loadRoles(page = this.rolePage): void { if (!this.session || !this.canManageRoles) return; this.isLoadingRoles = true; this.http.get<{ roles: RoleItem[]; page: number; pages: number }>(`${this.rootApi}/roles?page=${page}`, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: data => { this.roles = data.roles; this.rolePage = data.page; this.rolePages = data.pages; this.isLoadingRoles = false; }, error: error => { this.roleMessage = error.error?.message ?? 'No se pudieron cargar los roles.'; this.isLoadingRoles = false; } }); }
+  createRole(): void { if (!this.session || !this.roleCode.trim() || !this.roleLabel.trim()) return; this.roleMessage = ''; this.http.post(`${this.rootApi}/roles`, { code: this.roleCode.trim(), label: this.roleLabel.trim(), parent_role: this.roleParent || null }, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: () => { this.roleCode = ''; this.roleLabel = ''; this.roleParent = ''; this.roleMessage = 'Rol creado correctamente.'; this.loadRoles(); }, error: error => this.roleMessage = error.error?.message ?? 'No se pudo crear el rol.' }); }
+  updateRole(role: RoleItem): void { if (!this.session) return; const label = window.prompt('Nombre del rol', role.label); if (!label?.trim()) return; this.http.patch(`${this.rootApi}/roles/${encodeURIComponent(role.code)}`, { label: label.trim(), parent_role: role.parent_role }, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: () => this.loadRoles(), error: error => this.roleMessage = error.error?.message ?? 'No se pudo actualizar el rol.' }); }
+  deactivateRole(role: RoleItem): void { if (!this.session || !confirm(`¿Desactivar ${role.label}?`)) return; this.http.patch(`${this.rootApi}/roles/${encodeURIComponent(role.code)}/deactivate`, {}, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: () => this.loadRoles(), error: error => this.roleMessage = error.error?.message ?? 'No se pudo desactivar el rol.' }); }
+  loadPurchases(): void { if (!this.session || !this.canDelegatePurchases) return; this.http.get<{ purchases: PurchaseItem[] }>(`${this.rootApi}/purchases`, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: data => this.purchases = data.purchases, error: error => this.purchaseMessage = error.error?.message ?? 'No se pudieron cargar las compras.' }); }
+  searchPurchaseUsers(query = ''): void { if (!this.session) return; this.isSearchingPurchaseUsers = true; const role = this.purchaseSubrole || this.purchaseRole; this.http.get<{ users: DelegatedUser[] }>(`${this.rootApi}/purchase-users?role=${encodeURIComponent(role)}&q=${encodeURIComponent(query)}`, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: data => { this.purchaseUsers = data.users; this.isSearchingPurchaseUsers = false; }, error: error => { this.isSearchingPurchaseUsers = false; this.purchaseMessage = error.error?.message ?? 'No se pudieron buscar usuarios.'; } }); }
+  openPurchaseSearch(): void { this.purchaseSearchModal = true; this.purchaseSearch = ''; }
+  closePurchaseSearch(): void { this.purchaseSearchModal = false; }
+  applyPurchaseSearch(): void { this.searchPurchaseUsers(this.purchaseSearch.trim()); }
+  selectPurchaseUser(id: number | string | null): void { const selectedId = Number(id); this.selectedPurchaseUser = this.purchaseUsers.find(user => user.id === selectedId) ?? null; }
+  createPurchase(): void { if (!this.session || !this.purchaseName.trim() || !this.selectedPurchaseUser) return; this.http.post<{ message: string }>(`${this.rootApi}/purchases`, { name: this.purchaseName.trim(), user_id: this.selectedPurchaseUser.id }, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: data => { this.purchaseMessage = data.message; this.purchaseName = ''; this.purchaseSearch = ''; this.selectedPurchaseUser = null; this.purchaseUsers = []; this.loadPurchases(); }, error: error => this.purchaseMessage = error.error?.message ?? 'No se pudo delegar la compra.' }); }
+  updatePurchase(item: PurchaseItem): void { if (!this.session) return; const name = window.prompt('Nombre de la compra', item.name); if (!name?.trim()) return; this.http.patch(`${this.rootApi}/purchases/${item.id}`, { name: name.trim() }, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: () => this.loadPurchases(), error: error => this.purchaseMessage = error.error?.message ?? 'No se pudo actualizar la compra.' }); }
+  deactivatePurchase(item: PurchaseItem): void { if (!this.session || !confirm(`¿Desactivar ${item.name}?`)) return; this.http.patch(`${this.rootApi}/purchases/${item.id}/deactivate`, {}, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: () => this.loadPurchases(), error: error => this.purchaseMessage = error.error?.message ?? 'No se pudo desactivar la compra.' }); }
 
   togglePreRegistration(id: number): void {
     if (!this.session) return;

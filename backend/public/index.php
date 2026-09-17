@@ -6,11 +6,15 @@ use App\Config\Database;
 use App\Config\Env;
 use App\Controllers\AuthController;
 use App\Controllers\PreRegistrationController;
+use App\Controllers\RoleController;
+use App\Controllers\PurchaseController;
 use App\Repositories\UserRepository;
 use App\Services\AuthService;
 use App\Services\JwtService;
 use App\Services\NextcloudStorage;
 use App\Services\PreRegistrationService;
+use App\Services\RoleService;
+use App\Services\PurchaseService;
 
 spl_autoload_register(function (string $class): void {
     $prefix = 'App\\';
@@ -89,16 +93,42 @@ try {
         $currentPath = $storage->childPath($folder, $relativePath);
         if ($currentPath === null) { http_response_code(400); echo json_encode(['message' => 'Ruta de carpeta no válida.']); exit; }
         $isCategoryView = $session['role'] === 'contratacion_publica' && $requestedRole !== 'mine' && $relativePath === '';
-        echo json_encode(['folder' => $isCategoryView ? $requestedRole : $currentPath, 'path' => $relativePath, 'category' => $isCategoryView, 'files' => $isCategoryView ? $storage->listFoldersByRole($requestedRole) : $storage->listFiles($folder, $relativePath)]);
+        $displayFolder = $isCategoryView ? $requestedRole : ($relativePath === '' ? 'documentos' : basename($currentPath));
+        echo json_encode(['folder' => $displayFolder, 'path' => $relativePath, 'category' => $isCategoryView, 'files' => $isCategoryView ? $storage->listFoldersByRole($requestedRole) : $storage->listFiles($folder, $relativePath)]);
         exit;
     }
     if ($path === '/api/documents/config' && $_SERVER['REQUEST_METHOD'] === 'GET') {
         if ($session === null) { http_response_code(401); echo json_encode(['message' => 'Sesión no válida o expirada.']); exit; }
         echo json_encode(['extensions' => NextcloudStorage::ALLOWED_EXTENSIONS]); exit;
     }
+    if (str_starts_with($path, '/api/roles')) {
+        if ($session === null) { http_response_code(401); echo json_encode(['message' => 'Sesión no válida o expirada.']); exit; }
+        $controller = new RoleController(new RoleService(Database::connect($env)));
+        try {
+            if ($path === '/api/roles' && $_SERVER['REQUEST_METHOD'] === 'GET') { echo json_encode($controller->list($session, (int) ($_GET['page'] ?? 1))); exit; }
+            if ($path === '/api/roles' && $_SERVER['REQUEST_METHOD'] === 'POST') { echo json_encode($controller->create(json_decode((string) file_get_contents('php://input'), true) ?? [], $session)); exit; }
+            if (preg_match('#^/api/roles/([^/]+)$#', $path, $matches) && $_SERVER['REQUEST_METHOD'] === 'PATCH') { echo json_encode($controller->update(urldecode($matches[1]), json_decode((string) file_get_contents('php://input'), true) ?? [], $session)); exit; }
+            if (preg_match('#^/api/roles/([^/]+)/deactivate$#', $path, $matches) && $_SERVER['REQUEST_METHOD'] === 'PATCH') { echo json_encode($controller->deactivate(urldecode($matches[1]), $session)); exit; }
+        } catch (DomainException $exception) { http_response_code(403); echo json_encode(['message' => $exception->getMessage()]); exit;
+        } catch (InvalidArgumentException $exception) { http_response_code(422); echo json_encode(['message' => $exception->getMessage()]); exit; }
+        http_response_code(404); echo json_encode(['message' => 'Ruta de roles no encontrada.']); exit;
+    }
+    if (str_starts_with($path, '/api/purchases') || $path === '/api/purchase-users') {
+        if ($session === null) { http_response_code(401); echo json_encode(['message' => 'Sesión no válida o expirada.']); exit; }
+        $controller = new PurchaseController(new PurchaseService(Database::connect($env), new NextcloudStorage($env)));
+        try {
+            if ($path === '/api/purchase-users' && $_SERVER['REQUEST_METHOD'] === 'GET') { echo json_encode($controller->users($session, (string) ($_GET['role'] ?? ''), (string) ($_GET['q'] ?? ''))); exit; }
+            if ($path === '/api/purchases' && $_SERVER['REQUEST_METHOD'] === 'GET') { echo json_encode($controller->list($session)); exit; }
+            if ($path === '/api/purchases' && $_SERVER['REQUEST_METHOD'] === 'POST') { echo json_encode($controller->create(json_decode((string) file_get_contents('php://input'), true) ?? [], $session)); exit; }
+            if (preg_match('#^/api/purchases/(\d+)$#', $path, $matches) && $_SERVER['REQUEST_METHOD'] === 'PATCH') { echo json_encode($controller->update((int) $matches[1], json_decode((string) file_get_contents('php://input'), true) ?? [], $session)); exit; }
+            if (preg_match('#^/api/purchases/(\d+)/deactivate$#', $path, $matches) && $_SERVER['REQUEST_METHOD'] === 'PATCH') { echo json_encode($controller->deactivate((int) $matches[1], $session)); exit; }
+        } catch (DomainException $exception) { http_response_code(403); echo json_encode(['message' => $exception->getMessage()]); exit;
+        } catch (InvalidArgumentException|RuntimeException $exception) { http_response_code(422); echo json_encode(['message' => $exception->getMessage()]); exit; }
+        http_response_code(404); echo json_encode(['message' => 'Ruta de compras no encontrada.']); exit;
+    }
     if ($path === '/api/documents' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($session === null) { http_response_code(401); echo json_encode(['message' => 'Sesión no válida o expirada.']); exit; }
-        $role = $session['subrole'] ?? $session['role']; $storage = new NextcloudStorage($env); $folder = $storage->personalFolder((string) $role, (string) ($session['cedula'] ?? ''), (string) ($session['lastName'] ?? '')); $relativePath = (string) ($_POST['path'] ?? ''); if ($storage->childPath($folder, $relativePath) === null) { http_response_code(400); echo json_encode(['message' => 'Ruta de carpeta no válida.']); exit; } $ok = $storage->upload($folder, $_FILES['file'] ?? [], $relativePath);
+        $role = $session['subrole'] ?? $session['role']; $storage = new NextcloudStorage($env); $folder = $storage->personalFolder((string) $role, (string) ($session['cedula'] ?? ''), (string) ($session['lastName'] ?? '')); $relativePath = trim(str_replace('\\', '/', (string) ($_POST['path'] ?? '')), '/'); if (!preg_match('#^(procesos|pagos)(/|$)#i', $relativePath) || $storage->childPath($folder, $relativePath) === null) { http_response_code(400); echo json_encode(['message' => 'Solo puede subir archivos dentro de procesos o pagos.']); exit; } $ok = $storage->upload($folder, $_FILES['file'] ?? [], $relativePath);
         if (!$ok) { http_response_code(422); echo json_encode(['ok' => false, 'message' => 'No se pudo cargar el archivo. Verifique su conexión a Nextcloud e inténtelo nuevamente.']); exit; }
         echo json_encode(['ok' => true, 'folder' => $storage->childPath($folder, $relativePath), 'message' => 'Archivo cargado correctamente.']); exit;
     }

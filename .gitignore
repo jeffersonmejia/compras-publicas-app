@@ -12,6 +12,7 @@
 # Credenciales y configuraciones locales: solo se versiona la plantilla.
 .env*
 !.env.example
+users.txt
 npm-debug.log
 yarn-error.log
 
@@ -52,3 +53,4 @@ AGENTS.md
 # Documentación local de referencia
 README.md
 requirements.md
+users.txt
