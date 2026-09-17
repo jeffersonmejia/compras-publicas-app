@@ -85,7 +85,7 @@ try {
         $requestedRole = $session['role'] === 'contratacion_publica' ? (string) ($_GET['role'] ?? $ownRole) : $ownRole;
         $storage = new NextcloudStorage($env);
         $folder = $storage->personalFolder((string) $ownRole, (string) ($session['cedula'] ?? ''), (string) ($session['lastName'] ?? ''));
-        $isCategoryView = $session['role'] === 'contratacion_publica' && $requestedRole !== $ownRole;
+        $isCategoryView = $session['role'] === 'contratacion_publica' && $requestedRole !== 'mine';
         echo json_encode(['folder' => $isCategoryView ? $requestedRole : $folder, 'category' => $isCategoryView, 'files' => $isCategoryView ? $storage->listFoldersByRole($requestedRole) : $storage->listFiles($folder)]);
         exit;
     }
@@ -98,6 +98,21 @@ try {
         $role = $session['subrole'] ?? $session['role']; $storage = new NextcloudStorage($env); $folder = $storage->personalFolder((string) $role, (string) ($session['cedula'] ?? ''), (string) ($session['lastName'] ?? '')); $ok = $storage->upload($folder, $_FILES['file'] ?? []);
         if (!$ok) { http_response_code(422); echo json_encode(['ok' => false, 'message' => 'No se pudo cargar el archivo. Verifique su conexión a Nextcloud e inténtelo nuevamente.']); exit; }
         echo json_encode(['ok' => true, 'folder' => $folder, 'message' => 'Archivo cargado correctamente.']); exit;
+    }
+    if ($path === '/api/documents/folders' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        if ($session === null) { http_response_code(401); echo json_encode(['message' => 'Sesión no válida o expirada.']); exit; }
+        $payload = json_decode((string) file_get_contents('php://input'), true) ?? []; $role = $session['subrole'] ?? $session['role']; $storage = new NextcloudStorage($env); $folder = $storage->personalFolder((string) $role, (string) ($session['cedula'] ?? ''), (string) ($session['lastName'] ?? ''));
+        $ok = $storage->createFolder($folder, trim((string) ($payload['name'] ?? ''))); if (!$ok) { http_response_code(422); echo json_encode(['message' => 'No se pudo crear la carpeta. Verifique que el nombre no exista.']); exit; } echo json_encode(['ok' => true]); exit;
+    }
+    if (preg_match('#^/api/documents/folders/(.+)$#', $path, $matches) && $_SERVER['REQUEST_METHOD'] === 'PATCH') {
+        if ($session === null) { http_response_code(401); echo json_encode(['message' => 'Sesión no válida o expirada.']); exit; }
+        $payload = json_decode((string) file_get_contents('php://input'), true) ?? []; $role = $session['subrole'] ?? $session['role']; $storage = new NextcloudStorage($env); $folder = $storage->personalFolder((string) $role, (string) ($session['cedula'] ?? ''), (string) ($session['lastName'] ?? ''));
+        $ok = $storage->renameFolder($folder, urldecode($matches[1]), trim((string) ($payload['name'] ?? ''))); if (!$ok) { http_response_code(422); echo json_encode(['message' => 'No se pudo renombrar la carpeta.']); exit; } echo json_encode(['ok' => true]); exit;
+    }
+    if (preg_match('#^/api/documents/folders/(.+)$#', $path, $matches) && $_SERVER['REQUEST_METHOD'] === 'DELETE') {
+        if ($session === null) { http_response_code(401); echo json_encode(['message' => 'Sesión no válida o expirada.']); exit; }
+        $role = $session['subrole'] ?? $session['role']; $storage = new NextcloudStorage($env); $folder = $storage->personalFolder((string) $role, (string) ($session['cedula'] ?? ''), (string) ($session['lastName'] ?? ''));
+        $ok = $storage->delete($folder, urldecode($matches[1])); if (!$ok) { http_response_code(422); echo json_encode(['message' => 'No se pudo eliminar la carpeta.']); exit; } echo json_encode(['ok' => true]); exit;
     }
     if (preg_match('#^/api/documents/(.+)$#', $path, $matches) && $_SERVER['REQUEST_METHOD'] === 'DELETE') {
         if ($session === null) { http_response_code(401); echo json_encode(['message' => 'Sesión no válida o expirada.']); exit; }

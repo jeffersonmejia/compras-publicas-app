@@ -29,13 +29,17 @@ export class App implements OnInit {
   session: SessionData | null = null;
   isRestoringSession = true;
   files: CloudFile[] = [];
-  selectedFileRole = 'contratacion_publica';
+  selectedFileRole = 'mine';
   allowedExtensions: string[] = ['pdf', 'doc', 'docx', 'xls', 'xlsx'];
   isUploading = false;
   isLoadingFiles = false;
   uploadMessage = '';
   currentFolder = '';
   isCategoryView = false;
+  folderModal: 'create' | 'rename' | null = null;
+  folderName = '';
+  folderToRename = '';
+  deleteTarget: CloudFile | null = null;
   activeHomeView: 'files' | 'pre-registration' = 'files';
   cedula = '';
   preRegistrationRole = 'operador';
@@ -80,6 +84,7 @@ export class App implements OnInit {
   get rootApi(): string { return `http://${window.location.hostname}/compras-publicas-api/api`; }
   get fileAccept(): string { return this.allowedExtensions.map((extension) => `.${extension}`).join(','); }
   get canPreRegister(): boolean { return this.session?.user.role === 'contratacion_publica'; }
+  get selectedFileRoleLabel(): string { const labels: Record<string, string> = { contratacion_publica: 'Contratación Pública', bienes_activos_fijos: 'Bienes y Activos Fijos', contador: 'Contador', director: 'Director', informatica: 'Informática', talento_humano: 'Talento Humano', comunicacion: 'Comunicación', mine: 'Mi carpeta' }; return labels[this.selectedFileRole] ?? 'Filtrar'; }
 
   openRecovery(): void { this.loginMessage = ''; this.authMode = 'recovery'; }
   openRegistration(): void { this.loginMessage = ''; this.registrationMessage = ''; this.authMode = 'registration'; }
@@ -124,10 +129,31 @@ export class App implements OnInit {
     this.http.get<{ extensions: string[] }>(`${this.rootApi}/documents/config`, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: data => this.allowedExtensions = data.extensions });
   }
 
+  chooseFileFilter(role: string): void { this.selectedFileRole = role; this.loadFiles(); }
+
+  openCreateFolder(): void { this.folderName = ''; this.folderToRename = ''; this.folderModal = 'create'; }
+  openRenameFolder(name: string): void { this.folderName = name; this.folderToRename = name; this.folderModal = 'rename'; }
+  closeFolderModal(): void { this.folderModal = null; this.folderName = ''; this.folderToRename = ''; }
+  saveFolder(): void {
+    if (!this.session || !this.folderName.trim()) return;
+    const headers = new HttpHeaders({ Authorization: `Bearer ${this.session.token}` });
+    const request = this.folderModal === 'create'
+      ? this.http.post(`${this.rootApi}/documents/folders`, { name: this.folderName.trim() }, { headers })
+      : this.http.patch(`${this.rootApi}/documents/folders/${encodeURIComponent(this.folderToRename)}`, { name: this.folderName.trim() }, { headers });
+    request.subscribe({ next: () => { this.uploadMessage = this.folderModal === 'create' ? 'Carpeta creada correctamente.' : 'Carpeta renombrada correctamente.'; this.closeFolderModal(); this.loadFiles(false); }, error: error => this.uploadMessage = error.error?.message ?? 'No se pudo guardar la carpeta.' });
+  }
+  requestDelete(file: CloudFile): void { this.deleteTarget = file; }
+  cancelDelete(): void { this.deleteTarget = null; }
+  confirmDelete(): void {
+    if (!this.session || !this.deleteTarget) return;
+    const target = this.deleteTarget; const url = target.type === 'folder' ? `${this.rootApi}/documents/folders/${encodeURIComponent(target.name)}` : `${this.rootApi}/documents/${encodeURIComponent(target.name)}`;
+    this.http.delete(url, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: () => { this.deleteTarget = null; this.uploadMessage = target.type === 'folder' ? 'Carpeta eliminada correctamente.' : 'Archivo eliminado correctamente.'; this.loadFiles(false); }, error: error => { this.deleteTarget = null; this.uploadMessage = error.error?.message ?? 'No se pudo eliminar el elemento.'; } });
+  }
+
   uploadFile(event: Event): void { const file = (event.target as HTMLInputElement).files?.[0]; if (file) this.uploadSelectedFile(file); }
   onFileDrop(event: DragEvent): void { event.preventDefault(); const file = event.dataTransfer?.files?.[0]; if (file) this.uploadSelectedFile(file); }
   private uploadSelectedFile(file: File): void { if (!this.session || this.isUploading || this.isLoadingFiles || this.isCategoryView) return; const extension = file.name.split('.').pop()?.toLowerCase() ?? ''; if (!this.allowedExtensions.includes(extension)) { this.uploadMessage = 'Formato no permitido. Use PDF, Word o Excel.'; return; } this.isUploading = true; this.uploadMessage = `Cargando ${file.name}…`; const data = new FormData(); data.append('file', file); this.http.post<{ ok: boolean; folder: string; message: string }>(`${this.rootApi}/documents`, data, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe({ next: ({ folder, message }) => { this.isUploading = false; this.currentFolder = folder; this.uploadMessage = message || 'Archivo cargado correctamente.'; this.loadFiles(false); }, error: error => { this.isUploading = false; this.uploadMessage = error.error?.message ?? 'No se pudo cargar el archivo.'; } }); }
-  deleteFile(name: string): void { if (!this.session) return; this.http.delete(`${this.rootApi}/documents/${encodeURIComponent(name)}`, { headers: new HttpHeaders({ Authorization: `Bearer ${this.session.token}` }) }).subscribe(() => this.loadFiles()); }
+  deleteFile(name: string): void { this.requestDelete({ name, type: 'file' }); }
 
   createPreRegistration(): void {
     if (!this.session) return;

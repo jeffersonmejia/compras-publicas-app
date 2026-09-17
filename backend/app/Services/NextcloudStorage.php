@@ -82,11 +82,31 @@ final class NextcloudStorage
         return $response['status'] >= 200 && $response['status'] < 300;
     }
 
+    public function createFolder(string $folder, string $name): bool
+    {
+        if (!$this->ensureFolder($folder) || !$this->validEntryName($name)) return false;
+        $response = $this->request('MKCOL', $folder . '/' . trim($name));
+        return $response['status'] === 201;
+    }
+
+    public function renameFolder(string $folder, string $currentName, string $newName): bool
+    {
+        if (!$this->validEntryName($currentName) || !$this->validEntryName($newName)) return false;
+        $destination = rtrim($this->env['NEXTCLOUD_BASE_URL'], '/') . '/remote.php/dav/files/' . rawurlencode($this->env['NEXTCLOUD_USERNAME']) . '/' . rawurlencode($folder) . '/' . rawurlencode(trim($newName));
+        $response = $this->request('MOVE', $folder . '/' . trim($currentName), ['Destination: ' . $destination, 'Overwrite: F']);
+        return $response['status'] >= 200 && $response['status'] < 300;
+    }
+
     private function ensureFolder(string $folder): bool
     {
         if (!$this->isConfigured() || !function_exists('curl_init')) return false;
         $response = $this->request('MKCOL', $folder);
         return in_array($response['status'], [201, 301, 405], true);
+    }
+
+    private function validEntryName(string $name): bool
+    {
+        return $name !== '' && $name === basename($name) && !str_contains($name, '..');
     }
 
     /** @param list<string> $headers @return array{status:int, body:string|false} */
