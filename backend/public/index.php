@@ -7,6 +7,7 @@ use App\Config\Env;
 use App\Controllers\AuthController;
 use App\Repositories\UserRepository;
 use App\Services\AuthService;
+use App\Services\JwtService;
 use App\Services\NextcloudStorage;
 
 spl_autoload_register(function (string $class): void {
@@ -48,8 +49,16 @@ try {
 
     if ($path === '/api/auth/login' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $payload = json_decode((string) file_get_contents('php://input'), true) ?? [];
-        $controller = new AuthController(new AuthService(new UserRepository(Database::connect($env))));
+        $jwt = new JwtService($env['JWT_SECRET'], (int) $env['SESSION_DURATION_MINUTES']);
+        $controller = new AuthController(new AuthService(new UserRepository(Database::connect($env)), $jwt));
         echo json_encode($controller->login($payload));
+        exit;
+    }
+
+    if ($path === '/api/auth/session' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+        $jwt = new JwtService($env['JWT_SECRET'], (int) $env['SESSION_DURATION_MINUTES']);
+        $controller = new AuthController(new AuthService(new UserRepository(Database::connect($env)), $jwt));
+        echo json_encode($controller->session($_SERVER['HTTP_AUTHORIZATION'] ?? ''));
         exit;
     }
 

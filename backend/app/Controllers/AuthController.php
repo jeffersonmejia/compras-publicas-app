@@ -8,21 +8,26 @@ use App\Services\AuthService;
 
 final class AuthController
 {
-    public function __construct(private readonly AuthService $auth)
-    {
-    }
+    public function __construct(private readonly AuthService $auth) {}
 
     public function login(array $payload): array
     {
-        $username = (string) ($payload['username'] ?? '');
-        $password = (string) ($payload['password'] ?? '');
-        $user = $this->auth->authenticate($username, $password);
-
-        if ($user === null) {
+        $session = $this->auth->authenticate((string) ($payload['username'] ?? ''), (string) ($payload['password'] ?? ''));
+        if ($session === null) {
             http_response_code(401);
             return ['message' => 'Nombre de usuario o contraseña incorrecta.'];
         }
+        return $session;
+    }
 
-        return ['user' => $user];
+    public function session(string $authorization): array
+    {
+        $token = preg_replace('/^Bearer\s+/i', '', $authorization) ?? '';
+        $session = $this->auth->validateSession($token);
+        if ($session === null) {
+            http_response_code(401);
+            return ['message' => 'Sesión no válida o expirada.'];
+        }
+        return ['session' => $session];
     }
 }

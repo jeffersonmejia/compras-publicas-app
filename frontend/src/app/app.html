@@ -1,46 +1,101 @@
 <main class="login">
-  <section id="login" aria-label="Compras Públicas">
-    <h1>
+  @if (isRestoringSession) {
+    <section class="session-loader" aria-label="Verificando sesión"><span class="material-symbols-outlined" aria-hidden="true">progress_activity</span></section>
+  } @else if (authMode === 'home') {
+    <section class="home-page" aria-label="Inicio de Compras Públicas">
+      <header class="home-header">
+        <a class="home-brand" href="/"><img src="/gadmsd-intranet.png" alt="Municipalidad Santo Domingo" /><span>Compras Públicas</span></a>
+        <details class="session-menu">
+          <summary><span class="material-symbols-outlined" aria-hidden="true">account_circle</span><span>{{ sessionRoleLabel }}</span><span class="material-symbols-outlined menu-arrow" aria-hidden="true">expand_more</span></summary>
+          <div class="session-panel">
+            <span class="session-user">{{ session?.user?.username }}</span>
+            <span class="session-role"><span class="material-symbols-outlined" aria-hidden="true">badge</span>{{ sessionRoleLabel }}</span>
+            <button type="button" (click)="logout()"><span class="material-symbols-outlined" aria-hidden="true">logout</span>Cerrar sesión</button>
+          </div>
+        </details>
+      </header>
+      <main class="home-content">
+        <span class="material-symbols-outlined home-icon" aria-hidden="true">dashboard</span>
+        <p class="home-eyebrow">PANEL PRINCIPAL</p>
+        <h1>Bienvenido a Compras Públicas</h1>
+        <p>Seleccione un módulo para comenzar a gestionar la documentación institucional.</p>
+        <div class="home-cards">
+          <article><span class="material-symbols-outlined" aria-hidden="true">folder_open</span><h2>Procesos</h2><p>Consulte los procesos de compra.</p></article>
+          <article><span class="material-symbols-outlined" aria-hidden="true">description</span><h2>Documentos</h2><p>Organice los archivos institucionales.</p></article>
+          <article><span class="material-symbols-outlined" aria-hidden="true">notifications</span><h2>Novedades</h2><p>Revise actividad reciente.</p></article>
+        </div>
+      </main>
+    </section>
+  } @else {
+  <section class="login-layout">
+    <aside class="login-brand" aria-label="Municipalidad Santo Domingo">
+      <img src="/gadmsd-intranet.png" alt="Municipalidad Santo Domingo" />
+      <div>
+        <p class="brand-eyebrow">Sistema institucional</p>
+        <h1>Compras Públicas</h1>
+        <p>Gestione los procesos y la documentación institucional desde un solo lugar.</p>
+      </div>
+    </aside>
+    <section id="login" [class.recovery-mode]="authMode === 'recovery'" aria-label="Compras Públicas">
+    <h1 class="mobile-logo">
       <a href="/" aria-label="Compras Públicas">
         <img src="/gadmsd-intranet.png" alt="Municipalidad Santo Domingo" />
         <span>Compras Públicas</span>
       </a>
     </h1>
-    <p class="login-title">Accede a Compras Públicas</p>
-    <p class="login-subtitle">Use su correo institucional para continuar</p>
 
-    @if (loginMessage) {
-      <div id="login_error" role="alert">
-        <strong>Error</strong>: <b>Ingresar el nombre de usuario y contraseña del correo electrónico institucional</b><br />
-        Nombre de usuario: no válidos o contraseña incorrecta.
+    @if (authMode === 'login') {
+      <div class="mode-content">
+        <p class="login-title">Accede a Compras Públicas</p>
+        <p class="login-subtitle">Use su correo institucional para continuar</p>
+
+        @if (loginMessage) {
+          <div id="login_error" role="alert">
+            <strong>Error</strong>: <b>Ingresar el nombre de usuario y contraseña del correo electrónico institucional</b><br />
+            Nombre de usuario: no válidos o contraseña incorrecta.
+          </div>
+        }
+
+        <form id="loginform" (ngSubmit)="onSubmit()">
+          <p>
+            <label for="user_login">Nombre de usuario o correo electrónico</label>
+            <span class="field-control"><span class="material-symbols-outlined" aria-hidden="true">person</span><input id="user_login" name="username" type="text" class="input" autocapitalize="off" autocomplete="username" [(ngModel)]="username" required /></span>
+          </p>
+          <p>
+            <label for="user_pass">Contraseña</label>
+            <span class="password-wrapper">
+              <span class="material-symbols-outlined field-icon" aria-hidden="true">lock</span>
+              <input id="user_pass" name="password" [type]="showPassword ? 'text' : 'password'" class="input" autocomplete="current-password" [(ngModel)]="password" required />
+              <button class="toggle-password" type="button" (click)="showPassword = !showPassword" [attr.aria-label]="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'"><span class="material-symbols-outlined" aria-hidden="true">{{ showPassword ? 'visibility_off' : 'visibility' }}</span></button>
+            </span>
+          </p>
+          <p class="forgetmenot"><label for="rememberme"><input id="rememberme" name="remember" type="checkbox" [(ngModel)]="remember" /> Recuérdame</label></p>
+          <div class="form-actions">
+            <button class="help-link" type="button" (click)="openRecovery()"><span class="material-symbols-outlined" aria-hidden="true">help</span> ¿Olvidaste tu contraseña?</button>
+            <button id="wp-submit" type="submit" [disabled]="isSubmitting">{{ isSubmitting ? 'Accediendo…' : 'Acceder' }} <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></button>
+          </div>
+        </form>
+      </div>
+    } @else {
+      <div class="mode-content recovery-content">
+        <span class="material-symbols-outlined recovery-icon" aria-hidden="true">key</span>
+        <p class="login-title">Recuperar contraseña</p>
+        <p class="login-subtitle">Indique su usuario o correo institucional para enviarle las instrucciones.</p>
+        <form id="recoveryform" (ngSubmit)="requestRecovery()">
+          <p>
+            <label for="recovery_user">Usuario o correo electrónico</label>
+            <span class="field-control"><span class="material-symbols-outlined" aria-hidden="true">person</span><input id="recovery_user" name="recoveryUsername" type="text" class="input" autocomplete="username" [(ngModel)]="recoveryUsername" required /></span>
+          </p>
+          <div class="recovery-actions">
+            <button class="back-button" type="button" (click)="closeRecovery()"><span class="material-symbols-outlined" aria-hidden="true">arrow_back</span> Volver</button>
+            <button id="wp-submit" type="submit">Continuar <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></button>
+          </div>
+        </form>
       </div>
     }
 
-    <form id="loginform" (ngSubmit)="onSubmit()">
-      <p>
-        <label for="user_login">Nombre de usuario o correo electrónico</label>
-        <span class="field-control">
-          <span class="material-symbols-outlined" aria-hidden="true">person</span>
-          <input id="user_login" name="username" type="text" class="input" autocapitalize="off" autocomplete="username" [(ngModel)]="username" required />
-        </span>
-      </p>
-      <p>
-        <label for="user_pass">Contraseña</label>
-        <span class="password-wrapper">
-          <span class="material-symbols-outlined field-icon" aria-hidden="true">lock</span>
-          <input id="user_pass" name="password" [type]="showPassword ? 'text' : 'password'" class="input" autocomplete="current-password" [(ngModel)]="password" required />
-          <button class="toggle-password" type="button" (click)="showPassword = !showPassword" [attr.aria-label]="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'">
-            <span class="material-symbols-outlined" aria-hidden="true">{{ showPassword ? 'visibility_off' : 'visibility' }}</span>
-          </button>
-        </span>
-      </p>
-      <p class="forgetmenot"><label for="rememberme"><input id="rememberme" name="remember" type="checkbox" [(ngModel)]="remember" /> Recuérdame</label></p>
-      <div class="form-actions">
-        <a class="help-link" href="#recuperar"><span class="material-symbols-outlined" aria-hidden="true">help</span> ¿Olvidaste tu contraseña?</a>
-        <button id="wp-submit" type="submit" [disabled]="isSubmitting">{{ isSubmitting ? 'Accediendo…' : 'Acceder' }} <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></button>
-      </div>
-    </form>
-
     <p id="backtoblog"><a href="https://www.santodomingo.gob.ec/?page_id=3597"><span class="material-symbols-outlined" aria-hidden="true">arrow_back</span> Volver a Intranet</a></p>
+    </section>
   </section>
+  }
 </main>

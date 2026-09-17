@@ -11,6 +11,7 @@ final class User
         public readonly string $username,
         public readonly string $passwordHash,
         public readonly string $role,
+        public readonly ?string $subrole,
         public readonly bool $isActive,
     ) {
     }

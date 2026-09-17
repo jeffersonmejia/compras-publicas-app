@@ -16,7 +16,7 @@ final class UserRepository
     public function findByUsername(string $username): ?User
     {
         $statement = $this->database->prepare(
-            'SELECT id, username, password_hash, role, is_active FROM users WHERE username = :username LIMIT 1'
+            'SELECT id, username, password_hash, role, subrole, is_active FROM users WHERE username = :username LIMIT 1'
         );
         $statement->execute(['username' => $username]);
         $row = $statement->fetch();
@@ -25,6 +25,6 @@ final class UserRepository
             return null;
         }
 
-        return new User((int) $row['id'], $row['username'], $row['password_hash'], $row['role'], (bool) $row['is_active']);
+        return new User((int) $row['id'], $row['username'], $row['password_hash'], $row['role'], $row['subrole'], (bool) $row['is_active']);
     }
 }

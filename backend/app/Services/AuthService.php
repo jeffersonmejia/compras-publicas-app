@@ -8,18 +8,18 @@ use App\Repositories\UserRepository;
 
 final class AuthService
 {
-    public function __construct(private readonly UserRepository $users)
+    public function __construct(private readonly UserRepository $users, private readonly JwtService $jwt)
     {
     }
 
-    /** @return array{id:int, username:string, role:string}|null */
     public function authenticate(string $username, string $password): ?array
     {
         $user = $this->users->findByUsername(trim($username));
-        if ($user === null || !$user->isActive || !password_verify($password, $user->passwordHash)) {
-            return null;
-        }
+        if ($user === null || !$user->isActive || !password_verify($password, $user->passwordHash)) return null;
 
-        return ['id' => $user->id, 'username' => $user->username, 'role' => $user->role];
+        $identity = ['id' => $user->id, 'username' => $user->username, 'role' => $user->role, 'subrole' => $user->subrole];
+        return [...$this->jwt->issue($identity), 'user' => $identity];
     }
+
+    public function validateSession(string $token): ?array { return $this->jwt->verify($token); }
 }
