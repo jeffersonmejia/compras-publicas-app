@@ -23,7 +23,10 @@ require __DIR__ . '/../config/Env.php';
 require __DIR__ . '/../config/Database.php';
 
 header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Origin: http://localhost:4200');
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+if (preg_match('#^http://(localhost|127\\.0\\.0\\.1|10\\.|172\\.(1[6-9]|2[0-9]|3[0-1])\\.|192\\.168\\.)[^/]*:4200$#', $origin) === 1) {
+    header("Access-Control-Allow-Origin: {$origin}");
+}
 header('Access-Control-Allow-Headers: Content-Type');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -33,6 +36,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 try {
     $env = Env::load(__DIR__ . '/../.env');
     $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?? '/';
+    $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '')), '/');
+    if ($basePath !== '' && str_starts_with($path, $basePath)) {
+        $path = substr($path, strlen($basePath)) ?: '/';
+    }
 
     if ($path === '/api/health') {
         echo json_encode(['status' => 'ok', 'nextcloudConfigured' => (new NextcloudStorage($env))->isConfigured()]);

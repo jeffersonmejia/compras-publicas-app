@@ -1,28 +1,40 @@
-:host { display: block; min-height: 100vh; font-family: Arial, Helvetica, sans-serif; }
-.login { box-sizing: border-box; min-height: 100vh; padding: clamp(1.5rem, 5vh, 4rem) 1rem 2rem; background: #f1f1f1; }
-#login { width: min(100%, 360px); margin: auto; padding: 0 0 26px; }
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,400,0,0&family=Roboto:wght@400;500;700&display=swap');
+
+:host { display: block; min-height: 100vh; font-family: Roboto, Arial, sans-serif; }
+.login { box-sizing: border-box; display: grid; min-height: 100vh; place-items: center; padding: 2rem 1rem; background: #f8fafd; }
+#login { box-sizing: border-box; width: min(100%, 448px); padding: 44px 42px 34px; border: 1px solid #dadce0; border-radius: 16px; background: #fff; }
 #login h1 { margin: 0; }
-#login h1 a { display: grid; width: 220px; margin: 0 auto 18px; color: #1e1b4b; text-align: center; text-decoration: none; }
-#login h1 img { width: 220px; height: auto; object-fit: contain; }
-#login h1 span { margin-top: -4px; color: #1e1b4b; font-size: 18px; font-weight: 700; line-height: 1.3; }
-#login_error { margin: 0 0 16px; padding: 12px; border-left: 4px solid #dd3d36; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .13); color: #444; font-size: 13px; line-height: 1.45; }
-#loginform { margin-top: 20px; padding: 26px 24px 46px; overflow: hidden; border-radius: 20px; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .13); font-weight: 400; }
-#loginform p { margin: 0 0 16px; }
-#loginform label { color: #000; font-size: 14px; line-height: 1.5; }
-.input { box-sizing: border-box; width: 100%; min-height: 40px; margin: 3px 0 0; padding: 5px 8px; border: 1px solid #7e8993; border-radius: 0; background: #fff; color: #32373c; font-size: 24px; box-shadow: 0 0 0 transparent; }
-.input:focus { border-color: #5b9dd9; outline: 2px solid transparent; box-shadow: 0 0 0 1px #5b9dd9; }
-.password-wrapper { position: relative; display: block; }
-.password-wrapper .input { padding-right: 42px; }
-.toggle-password { position: absolute; top: 4px; right: 3px; width: 36px; height: 34px; padding: 6px; border: 0; background: transparent; color: #50575e; cursor: pointer; }
-.toggle-password svg { width: 22px; height: 22px; fill: currentColor; }
-.forgetmenot { float: left; margin-top: 2px !important; }
-.forgetmenot label { display: flex; align-items: center; gap: 4px; }
-.forgetmenot input { width: 16px; height: 16px; margin: 0; accent-color: #1e73be; }
-.submit { float: right; margin: 0 !important; }
-#wp-submit { min-height: 30px; padding: 0 12px; border: 1px solid #00519c; border-radius: 3px; background: #1e73be; box-shadow: inset 0 1px 0 rgba(255,255,255,.15); color: #fff; cursor: pointer; font-size: 13px; line-height: 2.15; text-shadow: 0 -1px 1px #00519c, 1px 0 1px #00519c, 0 1px 1px #00519c, -1px 0 1px #00519c; }
-#wp-submit:hover { background: #135e96; border-color: #00519c; }
-#nav { display: none; margin: 24px 0 0; }
-#backtoblog { margin: 16px 0 0; padding: 0 24px; }
-#backtoblog a { color: #161616; font-size: 13px; text-decoration: none; }
-#backtoblog a:hover { color: #000; text-decoration: underline; }
-@media (max-width: 400px) { .login { padding: 1.25rem .75rem; } #loginform { padding: 22px 18px 38px; } #login h1 a, #login h1 img { width: min(200px, 100%); } #backtoblog { padding: 0 8px; } }
+#login h1 a { display: grid; justify-items: center; width: 180px; margin: 0 auto; color: #1e1b4b; text-align: center; text-decoration: none; }
+#login h1 img { width: 180px; height: auto; object-fit: contain; }
+#login h1 span { margin-top: 2px; color: #202124; font-size: 18px; font-weight: 700; line-height: 1.35; }
+.login-title { margin: 28px 0 8px; color: #202124; font-size: 24px; font-weight: 400; letter-spacing: -.3px; text-align: center; }
+.login-subtitle { margin: 0 0 32px; color: #5f6368; font-size: 15px; text-align: center; }
+#login_error { margin: 0 0 24px; padding: 12px 14px; border: 1px solid #f28b82; border-radius: 8px; background: #fce8e6; color: #a50e0e; font-size: 13px; line-height: 1.55; }
+#loginform { padding: 0; background: transparent; }
+#loginform p { margin: 0 0 22px; }
+#loginform label { display: block; margin-bottom: 8px; color: #202124; font-size: 14px; font-weight: 500; line-height: 1.4; }
+.field-control, .password-wrapper { position: relative; display: block; }
+.field-control > .material-symbols-outlined, .field-icon { position: absolute; top: 50%; left: 14px; transform: translateY(-50%); color: #5f6368; font-size: 21px; pointer-events: none; }
+.input { box-sizing: border-box; width: 100%; height: 52px; padding: 0 46px; border: 1px solid #dadce0; border-radius: 8px; background: #fff; color: #202124; font: inherit; font-size: 16px; transition: border-color .15s ease; }
+.input:focus { border: 2px solid #1a73e8; outline: none; }
+.password-wrapper .input { padding-right: 50px; }
+.toggle-password { position: absolute; top: 6px; right: 6px; display: grid; width: 40px; height: 40px; place-items: center; padding: 0; border: 0; border-radius: 50%; background: transparent; color: #5f6368; cursor: pointer; }
+.toggle-password:hover { background: #f1f3f4; }
+.toggle-password .material-symbols-outlined { font-size: 21px; }
+.forgetmenot { margin: 4px 0 34px !important; }
+.forgetmenot label { display: flex !important; align-items: center; gap: 9px; margin: 0 !important; color: #3c4043 !important; font-weight: 400 !important; }
+.forgetmenot input { width: 18px; height: 18px; margin: 0; accent-color: #1a73e8; }
+.form-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 4px; }
+.help-link { display: inline-flex; align-items: center; gap: 7px; color: #1967d2; font-size: 14px; font-weight: 500; text-decoration: none; }
+.help-link .material-symbols-outlined { font-size: 18px; }
+.help-link:hover { text-decoration: underline; }
+#wp-submit { display: inline-flex; min-height: 42px; align-items: center; gap: 8px; padding: 0 20px; border: 1px solid #1a73e8; border-radius: 21px; background: #1a73e8; color: #fff; cursor: pointer; font: inherit; font-size: 14px; font-weight: 500; }
+#wp-submit .material-symbols-outlined { font-size: 18px; }
+#wp-submit:hover { border-color: #1967d2; background: #1967d2; }
+#wp-submit:disabled { cursor: wait; opacity: .7; }
+#backtoblog { display: flex; justify-content: center; margin: 32px 0 0; padding-top: 22px; border-top: 1px solid #f1f3f4; }
+#backtoblog a { display: inline-flex; align-items: center; gap: 8px; color: #5f6368; font-size: 14px; font-weight: 500; text-decoration: none; }
+#backtoblog a:hover { color: #1967d2; }
+#backtoblog .material-symbols-outlined { font-size: 19px; }
+.material-symbols-outlined { font-family: 'Material Symbols Outlined'; font-style: normal; font-weight: normal; line-height: 1; white-space: nowrap; }
+@media (max-width: 520px) { .login { display: block; padding: 0; background: #fff; } #login { width: 100%; min-height: 100vh; padding: 32px 26px; border: 0; border-radius: 0; } .form-actions { align-items: flex-start; flex-direction: column-reverse; } #wp-submit { width: 100%; justify-content: center; } }
